@@ -13,7 +13,14 @@ export async function GET() {
     );
   }
 
-  const webhookUrl = `${baseUrl}/api/telegram/webhook`;
+  let base = baseUrl.trim().replace(/\/$/, "");
+  if (!base.startsWith("http://") && !base.startsWith("https://")) {
+    base = `https://${base}`;
+  }
+  if (base.startsWith("http://")) {
+    base = base.replace("http://", "https://");
+  }
+  const webhookUrl = `${base}/api/telegram/webhook`;
   const setWebhookUrl = `${TELEGRAM_API}${token}/setWebhook`;
 
   const res = await fetch(setWebhookUrl, {

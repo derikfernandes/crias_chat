@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getReplyForChat } from "@/lib/telegram-bot";
 
 const TELEGRAM_API = "https://api.telegram.org/bot";
 
@@ -17,13 +18,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false }, { status: 500 });
     }
 
+    const replyText = getReplyForChat(chatId);
     const sendUrl = `${TELEGRAM_API}${token}/sendMessage`;
     await fetch(sendUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: chatId,
-        text: "Bot conectado com sucesso",
+        text: replyText,
       }),
     });
 
