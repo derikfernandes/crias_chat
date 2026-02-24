@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false }, { status: 500 });
     }
 
-    const replyText = getReplyForChat(chatId);
+    const replyText = await getReplyForChat(chatId, text ?? "");
     const sendUrl = `${TELEGRAM_API}${token}/sendMessage`;
     await fetch(sendUrl, {
       method: "POST",

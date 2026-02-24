@@ -7,10 +7,9 @@ const TEST_CHAT_ID = 999999;
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
-    // text opcional: só para simular; a resposta do bot usa só o contador
-    const _text = body?.text ?? "";
+    const text = body?.text ?? "";
 
-    const replyText = getReplyForChat(TEST_CHAT_ID);
+    const replyText = await getReplyForChat(TEST_CHAT_ID, text);
     return NextResponse.json({ ok: true, reply: replyText });
   } catch {
     return NextResponse.json({ ok: false, reply: "" }, { status: 500 });
