@@ -7,7 +7,20 @@ const OAUTH_TOKEN_URL = "https://accounts.google.com/o/oauth2/token";
 const VERTEX_GENERATE_URL =
   "https://us-central1-aiplatform.googleapis.com/v1/projects/crias-mvp/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent";
 
-const DEFAULT_SYSTEM_PROMPT = "Você é um assistente prestativo e amigável. Responda em português de forma clara e objetiva.";
+/** Prompt do bot de agenda: reuniões, lembretes, categorias, resumos e perguntas de esclarecimento. */
+const DEFAULT_SYSTEM_PROMPT = `Você é um bot que funciona como a agenda pessoal do usuário. Sua função é ajudar a organizar e enviar mensagens com:
+
+- **Anotações de reunião**: registre pontos discutidos, decisões, action items e participantes.
+- **Lembretes**: datas, horários e o que não esquecer.
+- **Tarefas**: coisas a fazer, com prioridade ou prazo quando informado.
+- **Compromissos**: eventos, reuniões futuras, compromissos agendados.
+- **Ideias e notas rápidas**: anotações soltas para depois.
+
+Comportamento esperado:
+1. **Resumos de reunião**: quando o usuário compartilhar anotações de reunião, apresente um resumo claro (o que foi decidido, próximos passos, responsáveis).
+2. **Perguntas de esclarecimento**: faça perguntas curtas e objetivas quando faltar informação importante (datas, responsáveis, prazos, contexto).
+3. **Organização**: sugira categorizar o conteúdo (reunião, lembrete, tarefa, etc.) quando fizer sentido.
+4. **Tom**: seja conciso, útil e em português. Evite respostas longas demais; priorize clareza e ação.`;
 
 let cachedOAuth: { access_token: string; expires_at: number } | null = null;
 const TOKEN_BUFFER_MS = 60 * 1000; // renovar 1 min antes de expirar
@@ -54,18 +67,34 @@ async function getOAuthToken(): Promise<string> {
   return cachedOAuth.access_token;
 }
 
+/** Uma mensagem no histórico (role do Gemini: "user" ou "model"). */
+export interface ChatMessage {
+  role: "user" | "model";
+  text: string;
+}
+
 export interface GenerateContentOptions {
   userMessage: string;
   systemPrompt?: string;
+  /** Histórico da conversa (janela de contexto). Use pelo menos as últimas 20 mensagens. */
+  history?: ChatMessage[];
 }
 
+const MAX_CONTEXT_MESSAGES = 20;
+
 export async function generateContent(options: GenerateContentOptions): Promise<string> {
-  const { userMessage, systemPrompt = DEFAULT_SYSTEM_PROMPT } = options;
+  const { userMessage, systemPrompt = DEFAULT_SYSTEM_PROMPT, history = [] } = options;
   const accessToken = await getOAuthToken();
+
+  const recent = history.slice(-MAX_CONTEXT_MESSAGES);
+  const contents: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }> = [
+    ...recent.map((m) => ({ role: m.role as "user" | "model", parts: [{ text: m.text }] })),
+    { role: "user", parts: [{ text: userMessage.trim() || "." }] },
+  ];
 
   const body = {
     systemInstruction: { parts: [{ text: systemPrompt }] },
-    contents: [{ role: "user", parts: [{ text: `${userMessage}.` }] }],
+    contents,
     generationConfig: {
       responseModalities: ["TEXT"],
       temperature: 0.13,
