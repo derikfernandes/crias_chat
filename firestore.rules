@@ -1,0 +1,17 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Reuniões: documento com assunto, data, createdAt, updatedAt
+    match /meetings/{meetingId} {
+      // Permite leitura e escrita para todos (ajuste depois com Firebase Auth se quiser restringir)
+      allow read, write: if true;
+
+      // Itens da reunião (subcoleção)
+      match /items/{itemId} {
+        allow read, write: if true;
+      }
+    }
+  }
+}

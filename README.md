@@ -1,74 +1,72 @@
-# Crias Chat – Bot Telegram (Webhook)
+# Crias Chat – Bot Telegram (Webhook + IA)
 
-Projeto mínimo em Next.js 14 (App Router) para conectar um bot do Telegram via webhook.
+Projeto em **Next.js 14 (App Router)** que conecta um bot do Telegram via webhook e usa **Vertex AI (Gemini)** como agenda pessoal: anotações de reunião, lembretes, tarefas e salvamento automático no Firestore.
 
 - **Bot:** [t.me/Crias_chat_bot](https://t.me/Crias_chat_bot)
-- Recebe mensagens enviadas ao bot e responde com: *"Bot conectado com sucesso"*.
+- As mensagens são processadas por IA (Gemini 2.5 Flash) e reuniões completas são salvas automaticamente no Firestore.
+
+## Documentação
+
+| Documento | Descrição |
+|-----------|-----------|
+| [README.md](README.md) | Este arquivo: visão geral, setup e endpoints. |
+| [docs/FRAMEWORK-BOTS.md](docs/FRAMEWORK-BOTS.md) | **Framework dos bots de IA**: quando cada “bot” (prompt) entra, fluxo da conversa e integração com Firestore. |
 
 ## Requisitos
 
 - Node.js 18+
-- Conta na [Vercel](https://vercel.com)
+- Conta na [Vercel](https://vercel.com) (deploy)
+- Projeto no [Firebase](https://console.firebase.google.com) (Firestore)
+- Credenciais OAuth2 Google (Vertex AI / Gemini)
 
-## Passo 1: Variáveis de ambiente
+## Variáveis de ambiente
 
-1. No **painel da Vercel** (após conectar o repositório):
-   - Abra o projeto → **Settings** → **Environment Variables**
-   - Adicione:
-     - `TELEGRAM_BOT_TOKEN` = `8687806337:AAH8zSsJVDCCMQIapQDdNnLR5bGRenY2Gfc`
-     - `BASE_URL` = a URL do seu app na Vercel (ex: `https://crias-chat.vercel.app`)
+No **painel da Vercel** (Settings → Environment Variables) ou em **`.env.local`** para desenvolvimento:
 
-2. Para **desenvolvimento local**, crie `.env.local` na raiz (ou use o que já existe) com:
-   ```env
-   TELEGRAM_BOT_TOKEN=8687806337:AAH8zSsJVDCCMQIapQDdNnLR5bGRenY2Gfc
-   BASE_URL=http://localhost:3000
-   ```
+```env
+# Telegram
+TELEGRAM_BOT_TOKEN=...
+BASE_URL=https://seu-app.vercel.app
 
-## Passo 2: Deploy na Vercel
+# Firebase (Firestore)
+NEXT_PUBLIC_FIREBASE_API_KEY=...
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=...
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=...
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...
+NEXT_PUBLIC_FIREBASE_APP_ID=...
+NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=...
 
-1. Acesse [vercel.com](https://vercel.com) e faça login.
-2. **Add New** → **Project** e importe o repositório deste projeto (ou faça upload).
-3. Confirme o framework **Next.js** e faça o deploy.
-4. Após o deploy, anote a URL (ex: `https://crias-chat.vercel.app`).
-5. Se ainda não definiu `BASE_URL`, volte em **Settings** → **Environment Variables** e defina:
-   - `BASE_URL` = `https://SEU_APP.vercel.app` (a URL do deploy).
-6. Faça um novo deploy (Redeploy) para aplicar as variáveis.
-
-## Passo 3: Configurar o webhook
-
-No navegador, acesse:
-
-```
-https://SEU_APP.vercel.app/api/telegram/setup
+# Vertex AI (Gemini) – OAuth2 com refresh token
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GOOGLE_REFRESH_TOKEN=...
 ```
 
-Exemplo: `https://crias-chat.vercel.app/api/telegram/setup`
+Use o [.env.example](.env.example) como referência; nunca commite `.env.local`.
 
-Se tudo estiver certo, a resposta será algo como:
+## Deploy na Vercel
 
-```json
-{ "ok": true, "result": true, "description": "Webhook was set" }
-```
-
-A partir daí, ao enviar qualquer mensagem para [@Crias_chat_bot](https://t.me/Crias_chat_bot), o bot deve responder com *"Bot conectado com sucesso"*.
+1. Conecte o repositório em [vercel.com](https://vercel.com) e faça o deploy.
+2. Configure todas as variáveis em **Settings → Environment Variables**.
+3. Defina `BASE_URL` com a URL do app (ex: `https://crias-chat.vercel.app`).
+4. Após o deploy, acesse `https://SEU_APP.vercel.app/api/telegram/setup` para registrar o webhook no Telegram.
 
 ## Endpoints
 
 | Endpoint | Método | Descrição |
 |----------|--------|-----------|
-| `/api/telegram/webhook` | POST | Recebe updates do Telegram e envia a resposta automática. |
+| `/api/telegram/webhook` | POST | Recebe updates do Telegram; processa com IA e responde (e opcionalmente salva reunião no Firestore). |
 | `/api/telegram/setup`   | GET  | Registra a URL do webhook no Telegram (`setWebhook`). |
+| `/api/telegram/test`   | POST | Teste local: body `{ "text": "..." }`; retorna `{ ok, reply }` sem enviar ao Telegram. |
 
-## Desenvolvimento local
+## Testar o bot localmente
 
-```bash
-npm install
-npm run dev
-```
-
-Em outro terminal (ou após o deploy), use um túnel (ex: [ngrok](https://ngrok.com)) para expor `http://localhost:3000` e defina `BASE_URL` com a URL do túnel. Depois acesse `https://SUA_URL_TUNEL/api/telegram/setup` para configurar o webhook em ambiente local.
+1. **Servidor:** `npm install` e `npm run dev`.
+2. **Interface web:** abra [http://localhost:3000/test-bot](http://localhost:3000/test-bot) para simular conversas (usa o mesmo fluxo de IA que o Telegram, sem enviar mensagens reais).
+3. **Webhook em produção:** use um túnel (ex: [ngrok](https://ngrok.com)) para expor `http://localhost:3000`, defina `BASE_URL` com a URL do túnel e acesse `https://SUA_URL/api/telegram/setup`.
 
 ## Segurança
 
-- **Nunca** commite o arquivo `.env.local` (ele já está no `.gitignore`).
-- Na Vercel, use apenas **Environment Variables** do painel; não coloque o token no código.
+- **Nunca** commite `.env.local` (já está no `.gitignore`).
+- Na Vercel, use apenas **Environment Variables** do painel; não coloque tokens no código.
