@@ -29,7 +29,7 @@ function meetingsCol() {
 }
 
 function meetingRef(id: string): DocumentReference<Meeting> {
-  return doc(getDb(), MEETINGS, id);
+  return doc(getDb(), MEETINGS, id) as DocumentReference<Meeting>;
 }
 
 function itemsCol(meetingId: string) {
