@@ -48,7 +48,7 @@ function markAsSaved(chatId: number, key: string): void {
   }
   set.add(key);
   if (set.size > MAX_SAVED_KEYS_PER_CHAT) {
-    const arr = [...set];
+    const arr = Array.from(set);
     arr.splice(0, arr.length - MAX_SAVED_KEYS_PER_CHAT);
     savedMeetingKeys.set(chatId, new Set(arr));
   }
