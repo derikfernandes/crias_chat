@@ -7,8 +7,8 @@ import {
   collection,
   doc,
   addDoc,
-  getDoc,
-  getDocs,
+  getDocFromServer,
+  getDocsFromServer,
   updateDoc,
   deleteDoc,
   query,
@@ -63,17 +63,17 @@ export async function createMeeting(data: MeetingCreate): Promise<string> {
   return ref.id;
 }
 
-/** Busca uma reunião por id. */
+/** Busca uma reunião por id. Sempre do servidor (sem cache). */
 export async function getMeeting(id: string): Promise<Meeting | null> {
-  const snap = await getDoc(meetingRef(id));
+  const snap = await getDocFromServer(meetingRef(id));
   if (!snap.exists()) return null;
   return { id: snap.id, ...snap.data() } as Meeting;
 }
 
-/** Lista reuniões (todas ou filtradas por assunto/data conforme precisar). */
+/** Lista reuniões (sempre do servidor, sem cache). */
 export async function listMeetings(): Promise<Meeting[]> {
   const q = query(meetingsCol(), orderBy("data", "desc"));
-  const snap = await getDocs(q);
+  const snap = await getDocsFromServer(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Meeting));
 }
 
@@ -97,12 +97,11 @@ export function formatMeetingDateStr(m: Meeting): string {
   });
 }
 
-/** Formata uma reunião para exibição (ex.: contexto da IA). */
+/** Formata uma reunião para exibição (ex.: contexto da IA). Sem limitação de tamanho. */
 export function formatMeetingForContext(m: Meeting): string {
   const dataStr = formatMeetingDateStr(m);
   const conteudo = (m.textoCompleto || "(sem conteúdo ainda)").trim();
-  const preview = conteudo.length > 600 ? conteudo.slice(0, 600) + "…" : conteudo;
-  return `• Assunto: "${m.assunto}" | Dia: ${dataStr}\n  O que já temos: ${preview}`;
+  return `• Assunto: "${m.assunto}" | Dia: ${dataStr}\n  O que já temos: ${conteudo}`;
 }
 
 /** Lista reuniões dos últimos N dias (fallback quando não há data na conversa). */
@@ -180,11 +179,11 @@ export async function addMeetingItem(
   return ref.id;
 }
 
-/** Lista itens de uma reunião (ordenados por order). */
+/** Lista itens de uma reunião (ordenados por order). Sempre do servidor (sem cache). */
 export async function listMeetingItems(meetingId: string): Promise<MeetingItem[]> {
   const col = itemsCol(meetingId);
   const q = query(col, orderBy("order", "asc"));
-  const snap = await getDocs(q);
+  const snap = await getDocsFromServer(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as MeetingItem));
 }
 

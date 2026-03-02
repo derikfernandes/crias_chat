@@ -27,7 +27,8 @@ Comportamento esperado:
 4. **Organização**: sugira categorizar o conteúdo (reunião, lembrete, tarefa, etc.) quando fizer sentido.
 5. **Tom**: seja conciso, útil e em português. Evite respostas longas demais; priorize clareza e ação.
 
-6. **Reuniões já salvas**: quando te passarem "[REUNIÕES RECENTES NO BANCO]" abaixo, use isso: se o usuário mandar um assunto ou falar de uma reunião, verifique se há alguma reunião listada com assunto parecido (ou no mesmo dia). Se houver, pergunte exatamente neste estilo: "Não está tratando da reunião [assunto], do dia [data]? Quer atualizar? O que já temos de informação é isso:\n[cole aqui o texto 'O que já temos' da reunião]." Só depois de perguntar isso (ou se não houver reunião parecida) prossiga com o fluxo normal (perguntar data, itens, etc.).`;
+6. **Reuniões já salvas**: quando te passarem "[REUNIÕES RECENTES NO BANCO]" abaixo, use isso: se o usuário mandar um assunto ou falar de uma reunião, verifique se há alguma reunião listada com assunto parecido (ou no mesmo dia). Se houver, pergunte exatamente neste estilo: "Não está tratando da reunião [assunto], do dia [data]? Quer atualizar? O que já temos de informação é isso:\n[cole aqui o texto 'O que já temos' da reunião]." Só depois de perguntar isso (ou se não houver reunião parecida) prossiga com o fluxo normal (perguntar data, itens, etc.).
+7. **Várias reuniões na mesma pergunta**: quando o usuário perguntar ou pedir algo que envolva mais de uma reunião (ex.: "me fala das reuniões da semana", "quais reuniões tenho?", "resume as reuniões"), responda APENAS com uma lista pelo **assunto** (e data, se fizer sentido) de cada reunião. Não entre em detalhes. Depois de listar os assuntos, diga algo como: "Qual delas você quer que eu detalhe?" ou "Escolha uma para eu entrar nos detalhes." O retorno com o conteúdo da reunião só acontece quando o usuário escolher explicitamente UMA reunião (por nome, assunto ou data); nesse caso o sistema devolve o **texto completo** (textoCompleto do banco), sem resumir nem cortar.`;
 
 let cachedOAuth: { access_token: string; expires_at: number } | null = null;
 const TOKEN_BUFFER_MS = 60 * 1000; // renovar 1 min antes de expirar
@@ -232,5 +233,50 @@ export async function extractMeetingFromHistory(
     };
   } catch {
     return { hasCompleteMeeting: false };
+  }
+}
+
+const ALTERATION_EXTRACTOR_SYSTEM_PROMPT = `Você é um extrator para ATUALIZAÇÃO de ata de reunião já existente.
+Será fornecida a conversa entre usuário e bot e o CONTEÚDO ATUAL da ata (texto completo que já está salvo).
+O usuário pode ter pedido para: APENAS INCLUIR novos itens (acrescentar ao final), ou ALTERAR/EDITAR/REMOVER partes do texto (mudar horário, apagar um ponto, corrigir um trecho, etc.).
+Sua tarefa: produzir o TEXTO COMPLETO FINAL que a ata deve ter depois de aplicar TODAS as alterações pedidas pelo usuário.
+- Se o usuário só incluiu coisas novas: o resultado é o conteúdo atual + as novas partes (na ordem que fizer sentido, em geral no final).
+- Se o usuário editou ou removeu algo: o resultado é o conteúdo atual já modificado (sem o que foi removido, com o que foi corrigido).
+Responda APENAS com um único JSON válido, sem markdown e sem texto antes ou depois:
+{"textoCompleto": "string"}
+- textoCompleto: OBRIGATÓRIO. O texto completo e final da ata, com todas as alterações aplicadas. Use \\n para quebras de linha. Não resuma; inclua tudo que deve permanecer na ata.`;
+
+/**
+ * Extrai o texto completo final da ata para uma atualização (incluir, editar ou remover partes).
+ * Recebe o histórico da conversa e o conteúdo atual da ata; retorna o texto que deve ser salvo.
+ */
+export async function extractMeetingUpdateFromHistory(
+  history: ChatMessage[],
+  existingTextoCompleto: string
+): Promise<string> {
+  if (history.length === 0) {
+    return existingTextoCompleto.trim();
+  }
+
+  const recent = history.slice(-MAX_CONTEXT_MESSAGES);
+  const conversationText = recent
+    .map((m) => `${m.role === "user" ? "Usuário" : "Bot"}: ${m.text}`)
+    .join("\n");
+
+  const userPrompt = `Conteúdo ATUAL da ata (já salvo no banco):\n---\n${existingTextoCompleto || "(vazio)"}\n---\n\nConversa:\n${conversationText}\n\nProduza o texto completo final da ata após aplicar todas as alterações pedidas pelo usuário. Responda APENAS com o JSON: {"textoCompleto": "..."}`;
+
+  const raw = await generateContent({
+    userMessage: userPrompt,
+    systemPrompt: ALTERATION_EXTRACTOR_SYSTEM_PROMPT,
+    history: [],
+  });
+
+  const cleaned = raw.replace(/^[\s\S]*?\{/, "{").replace(/\}[\s\S]*$/, "}");
+  try {
+    const parsed = JSON.parse(cleaned) as { textoCompleto?: string };
+    const text = typeof parsed.textoCompleto === "string" ? parsed.textoCompleto.trim() : "";
+    return text || existingTextoCompleto.trim();
+  } catch {
+    return existingTextoCompleto.trim();
   }
 }
