@@ -10,6 +10,11 @@ export default function Home() {
           Testar o bot no localhost (sem Telegram) →
         </Link>
       </p>
+      <p style={{ marginTop: "0.5rem" }}>
+        <Link href="/gerenciamento" style={{ color: "#4ecdc4" }}>
+          Gerenciamento (ver dados do banco) →
+        </Link>
+      </p>
     </main>
   );
 }
