@@ -66,8 +66,8 @@ export default async function GerenciamentoPage() {
           <>
             <div style={styles.stats}>
               <span style={styles.statsBadge}>
-                {meetingsWithItems.length} reunião
-                {meetingsWithItems.length !== 1 ? "ões" : ""}
+                {meetingsWithItems.length}{" "}
+                {meetingsWithItems.length === 1 ? "reunião" : "reuniões"}
               </span>
               <span style={styles.statsBadge}>
                 {meetingsWithItems.reduce(
@@ -75,6 +75,28 @@ export default async function GerenciamentoPage() {
                   0
                 )}{" "}
                 itens no total
+              </span>
+              <span style={styles.statsBadgeAccent}>
+                {meetingsWithItems.reduce(
+                  (acc, m) =>
+                    acc +
+                    m.items.filter(
+                      (it) =>
+                        (it.type as "note" | "action" | undefined) === "action"
+                    ).length,
+                  0
+                )}{" "}
+                {meetingsWithItems.reduce(
+                  (acc, m) =>
+                    acc +
+                    m.items.filter(
+                      (it) =>
+                        (it.type as "note" | "action" | undefined) === "action"
+                    ).length,
+                  0
+                ) === 1
+                  ? "ação"
+                  : "ações"}
               </span>
             </div>
 
@@ -162,6 +184,15 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#4ecdc4",
     fontSize: "0.85rem",
     fontWeight: 600,
+  },
+  statsBadgeAccent: {
+    padding: "0.5rem 0.9rem",
+    borderRadius: "10px",
+    background: "#4ecdc4",
+    border: "1px solid rgba(78, 205, 196, 0.6)",
+    color: "#1a1a2e",
+    fontSize: "0.85rem",
+    fontWeight: 700,
   },
   list: {
     display: "flex",

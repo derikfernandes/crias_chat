@@ -236,6 +236,38 @@ export async function extractMeetingFromHistory(
   }
 }
 
+const EXTRACT_ITEMS_FROM_TEXT_PROMPT = `Você é um extrator de itens. Receba um texto de ata ou reunião e extraia os pontos, decisões, anotações ou tarefas como uma lista.
+Responda APENAS com um único JSON válido, sem markdown e sem texto antes ou depois:
+{"items": ["item 1", "item 2", ...]}
+- items: lista de strings; cada uma é um ponto/item/anotação/tarefa da reunião. Se não houver nada para extrair, use [].`;
+
+/**
+ * Extrai itens (pontos, tarefas, anotações) a partir de um texto de reunião/ata.
+ * Usado pelo app de gerenciamento para "Extrair itens com IA" e salvar no banco.
+ */
+export async function extractItemsFromText(text: string): Promise<string[]> {
+  const trimmed = text?.trim() ?? "";
+  if (!trimmed) return [];
+
+  const userPrompt = `Texto da reunião/ata:\n---\n${trimmed}\n---\n\nExtraia os itens (pontos, decisões, tarefas, anotações). Responda APENAS com o JSON: {"items": [...]}`;
+
+  const raw = await generateContent({
+    userMessage: userPrompt,
+    systemPrompt: EXTRACT_ITEMS_FROM_TEXT_PROMPT,
+    history: [],
+  });
+
+  const cleaned = raw.replace(/^[\s\S]*?\{/, "{").replace(/\}[\s\S]*$/, "}");
+  try {
+    const parsed = JSON.parse(cleaned) as { items?: unknown };
+    return Array.isArray(parsed.items)
+      ? parsed.items.filter((x): x is string => typeof x === "string" && x.trim() !== "")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 const ALTERATION_EXTRACTOR_SYSTEM_PROMPT = `Você é um extrator para ATUALIZAÇÃO de ata de reunião já existente.
 Será fornecida a conversa entre usuário e bot e o CONTEÚDO ATUAL da ata (texto completo que já está salvo).
 O usuário pode ter pedido para: APENAS INCLUIR novos itens (acrescentar ao final), ou ALTERAR/EDITAR/REMOVER partes do texto (mudar horário, apagar um ponto, corrigir um trecho, etc.).

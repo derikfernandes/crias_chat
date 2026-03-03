@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { Meeting, MeetingItem } from "@/lib/firestore-types";
 
@@ -23,6 +23,12 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: "1rem",
     paddingBottom: "0.75rem",
     borderBottom: "1px solid rgba(255,255,255,0.1)",
+  },
+  dateContainer: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-end",
+    gap: "0.25rem",
   },
   cardTitle: {
     margin: 0,
@@ -70,6 +76,11 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "flex-start",
     gap: "0.5rem",
   },
+  actionItem: {
+    background: "rgba(78, 205, 196, 0.16)",
+    borderRadius: "10px",
+    padding: "0.35rem 0.6rem",
+  },
   itemOrder: {
     flexShrink: 0,
     width: "1.5rem",
@@ -82,6 +93,10 @@ const styles: Record<string, React.CSSProperties> = {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
+  },
+  actionItemOrder: {
+    background: "#4ecdc4",
+    color: "#1a1a2e",
   },
   itemContent: { flex: 1, fontSize: "0.95rem", color: "#ddd", lineHeight: 1.4 },
   cardMeta: {
@@ -156,6 +171,19 @@ const styles: Record<string, React.CSSProperties> = {
     gap: "0.5rem",
     marginBottom: "0.5rem",
   },
+  itemActionTag: {
+    padding: "0.25rem 0.6rem",
+    borderRadius: "999px",
+    border: "1px solid rgba(78, 205, 196, 0.5)",
+    fontSize: "0.7rem",
+    fontWeight: 600,
+    cursor: "pointer",
+    userSelect: "none",
+  },
+  itemActionTagActive: {
+    background: "#4ecdc4",
+    color: "#1a1a2e",
+  },
   status: {
     fontSize: "0.85rem",
     marginTop: "0.5rem",
@@ -177,6 +205,29 @@ export default function MeetingCard({
   const [textoCompleto, setTextoCompleto] = useState(
     meeting.textoCompleto ?? ""
   );
+  const initialDate = (() => {
+    const raw = meeting.data as any;
+    let d: Date | null = null;
+    if (raw instanceof Date) {
+      d = raw;
+    } else if (raw && typeof raw.toDate === "function") {
+      d = raw.toDate();
+    } else if (raw && typeof raw.seconds === "number") {
+      d = new Date(raw.seconds * 1000 + (raw.nanoseconds ?? 0) / 1_000_000);
+    } else if (typeof raw === "string") {
+      const parsed = new Date(raw);
+      if (!Number.isNaN(parsed.getTime())) d = parsed;
+    }
+    if (!d || Number.isNaN(d.getTime())) {
+      return { dateStr: "", timeStr: "" };
+    }
+    const iso = d.toISOString();
+    const dateStr = iso.slice(0, 10);
+    const timeStr = iso.slice(11, 16);
+    return { dateStr, timeStr };
+  })();
+  const [dateStr, setDateStr] = useState(initialDate.dateStr);
+  const [timeStr, setTimeStr] = useState(initialDate.timeStr);
   const [items, setItems] = useState(
     () =>
       [...(meeting.items ?? [])].sort(
@@ -184,13 +235,63 @@ export default function MeetingCard({
       ) as Array<MeetingItem & { id: string }>
   );
   const [saving, setSaving] = useState(false);
+  const [extractingItems, setExtractingItems] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(
     null
   );
 
+  // Sincroniza a lista de itens quando a reunião for atualizada (ex.: após "Extrair itens com IA" + router.refresh)
+  useEffect(() => {
+    if (editing) return;
+    setItems(
+      [...(meeting.items ?? [])].sort(
+        (a, b) => (a.order ?? 0) - (b.order ?? 0)
+      ) as Array<MeetingItem & { id: string }>
+    );
+  }, [editing, meeting.items]);
+
+  async function handleExtractItems() {
+    if (!meeting.id) return;
+    const textToUse = editing ? textoCompleto.trim() : (meeting.textoCompleto ?? "").trim();
+    if (!textToUse) {
+      setStatus({ ok: false, msg: "Preencha o conteúdo da reunião para extrair itens." });
+      return;
+    }
+    setExtractingItems(true);
+    setStatus(null);
+    try {
+      const res = await fetch(`/api/meetings/${meeting.id}/extract-items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editing ? { textoCompleto: textoCompleto.trim() } : {}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setStatus({ ok: false, msg: data?.error ?? "Erro ao extrair itens." });
+        return;
+      }
+      setStatus({
+        ok: true,
+        msg: data.itemsAdded
+          ? `${data.itemsAdded} itens extraídos e salvos.`
+          : data?.message ?? "Pronto.",
+      });
+      router.refresh();
+    } catch (e) {
+      setStatus({
+        ok: false,
+        msg: e instanceof Error ? e.message : "Erro ao extrair itens.",
+      });
+    } finally {
+      setExtractingItems(false);
+    }
+  }
+
   function cancelEdit() {
     setAssunto(meeting.assunto ?? "");
     setTextoCompleto(meeting.textoCompleto ?? "");
+    setDateStr(initialDate.dateStr);
+    setTimeStr(initialDate.timeStr);
     setItems(
       [...(meeting.items ?? [])].sort(
         (a, b) => (a.order ?? 0) - (b.order ?? 0)
@@ -208,15 +309,38 @@ export default function MeetingCard({
     });
   }
 
+  function toggleItemType(index: number) {
+    setItems((prev) => {
+      const next = [...prev];
+      const current = next[index];
+      const currentType = current.type === "action" ? "action" : "note";
+      next[index] = {
+        ...current,
+        type: currentType === "action" ? "note" : "action",
+        actionStatus:
+          currentType === "action" ? undefined : (current.actionStatus ?? "open"),
+      };
+      return next;
+    });
+  }
+
   async function confirmEdit() {
     if (!meeting.id) return;
     setSaving(true);
     setStatus(null);
     try {
-      const meetingPayload: { assunto?: string; textoCompleto?: string } = {};
+      const meetingPayload: {
+        assunto?: string;
+        textoCompleto?: string;
+        data?: string;
+      } = {};
       if (assunto !== (meeting.assunto ?? "")) meetingPayload.assunto = assunto;
       if (textoCompleto !== (meeting.textoCompleto ?? ""))
         meetingPayload.textoCompleto = textoCompleto;
+      if (dateStr) {
+        const payloadDate = timeStr ? `${dateStr}T${timeStr}` : dateStr;
+        meetingPayload.data = payloadDate;
+      }
       if (Object.keys(meetingPayload).length > 0) {
         const res = await fetch(`/api/meetings/${meeting.id}`, {
           method: "PATCH",
@@ -236,13 +360,28 @@ export default function MeetingCard({
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
         const orig = originalItems.find((o) => o.id === item.id) ?? originalItems[i];
-        if (!item.id || orig?.content === item.content) continue;
+        if (!item.id) continue;
+        const origType = (orig?.type as "note" | "action" | undefined) ?? "note";
+        const newType = (item.type as "note" | "action" | undefined) ?? "note";
+        const contentChanged = orig?.content !== item.content;
+        const typeChanged = origType !== newType;
+        const payload: Record<string, unknown> = {};
+        if (contentChanged) payload.content = item.content;
+        if (typeChanged) {
+          payload.type = newType;
+          if (newType === "action") {
+            payload.actionStatus = item.actionStatus ?? "open";
+          } else {
+            payload.actionStatus = undefined;
+          }
+        }
+        if (Object.keys(payload).length === 0) continue;
         const res = await fetch(
           `/api/meetings/${meeting.id}/items/${item.id}`,
           {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ content: item.content }),
+            body: JSON.stringify(payload),
           }
         );
         const data = await res.json().catch(() => ({}));
@@ -282,7 +421,38 @@ export default function MeetingCard({
         ) : (
           <h2 style={styles.cardTitle}>{meeting.assunto}</h2>
         )}
-        <span style={styles.cardDate}>{formattedDate}</span>
+        <div style={styles.dateContainer}>
+          {editing ? (
+            <>
+              <input
+                type="date"
+                value={dateStr}
+                onChange={(e) => setDateStr(e.target.value)}
+                style={{
+                  ...styles.input,
+                  width: "auto",
+                  minWidth: "140px",
+                  fontSize: "0.8rem",
+                  padding: "0.3rem 0.5rem",
+                }}
+              />
+              <input
+                type="time"
+                value={timeStr}
+                onChange={(e) => setTimeStr(e.target.value)}
+                style={{
+                  ...styles.input,
+                  width: "auto",
+                  minWidth: "100px",
+                  fontSize: "0.8rem",
+                  padding: "0.3rem 0.5rem",
+                }}
+              />
+            </>
+          ) : (
+            <span style={styles.cardDate}>{formattedDate}</span>
+          )}
+        </div>
       </div>
 
       <div style={styles.textoCompleto}>
@@ -309,26 +479,85 @@ export default function MeetingCard({
           <p style={styles.noItems}>Nenhum item.</p>
         ) : editing ? (
           <div style={{ marginTop: "0.25rem" }}>
-            {items.map((item, idx) => (
-              <div key={item.id ?? idx} style={styles.itemEdit}>
-                <span style={styles.itemOrder}>{item.order}</span>
-                <input
-                  type="text"
-                  value={item.content}
-                  onChange={(e) => updateItemContent(idx, e.target.value)}
-                  style={styles.input}
-                />
-              </div>
-            ))}
+            {items.map((item, idx) => {
+              const isAction = (item.type as "note" | "action" | undefined) === "action";
+              return (
+                <div
+                  key={item.id ?? idx}
+                  style={{
+                    ...styles.itemEdit,
+                    ...(isAction ? styles.actionItem : {}),
+                  }}
+                >
+                  <span
+                    style={{
+                      ...styles.itemOrder,
+                      ...(isAction ? styles.actionItemOrder : {}),
+                    }}
+                  >
+                    {item.order}
+                  </span>
+                  <input
+                    type="text"
+                    value={item.content}
+                    onChange={(e) => updateItemContent(idx, e.target.value)}
+                    style={styles.input}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => toggleItemType(idx)}
+                    style={{
+                      ...styles.itemActionTag,
+                      ...(isAction ? styles.itemActionTagActive : {}),
+                    }}
+                  >
+                    {isAction ? "Ação" : "Transformar em ação"}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         ) : (
           <ol style={styles.itemsList}>
-            {items.map((item, idx) => (
-              <li key={item.id ?? idx} style={styles.item}>
-                <span style={styles.itemOrder}>{item.order}</span>
-                <span style={styles.itemContent}>{item.content}</span>
-              </li>
-            ))}
+            {items.map((item, idx) => {
+              const isAction = (item.type as "note" | "action" | undefined) === "action";
+              return (
+                <li
+                  key={item.id ?? idx}
+                  style={{
+                    ...styles.item,
+                    ...(isAction ? styles.actionItem : {}),
+                  }}
+                >
+                  <span
+                    style={{
+                      ...styles.itemOrder,
+                      ...(isAction ? styles.actionItemOrder : {}),
+                    }}
+                  >
+                    {item.order}
+                  </span>
+                  <span style={styles.itemContent}>
+                    {item.content}
+                    {isAction && (
+                      <span
+                        style={{
+                          marginLeft: "0.4rem",
+                          padding: "0.1rem 0.45rem",
+                          borderRadius: "999px",
+                          fontSize: "0.7rem",
+                          fontWeight: 600,
+                          background: "rgba(78,205,196,0.25)",
+                          color: "#4ecdc4",
+                        }}
+                      >
+                        Ação
+                      </span>
+                    )}
+                  </span>
+                </li>
+              );
+            })}
           </ol>
         )}
       </div>
@@ -356,28 +585,46 @@ export default function MeetingCard({
             <button
               type="button"
               onClick={confirmEdit}
-              disabled={saving}
+              disabled={saving || extractingItems}
               style={{ ...styles.button, ...styles.buttonPrimary }}
             >
               {saving ? "Salvando…" : "Confirmar alteração"}
             </button>
             <button
               type="button"
+              onClick={handleExtractItems}
+              disabled={saving || extractingItems || !textoCompleto.trim()}
+              style={{ ...styles.button, ...styles.buttonEdit }}
+            >
+              {extractingItems ? "Extraindo…" : "Extrair itens com IA"}
+            </button>
+            <button
+              type="button"
               onClick={cancelEdit}
-              disabled={saving}
+              disabled={saving || extractingItems}
               style={{ ...styles.button, ...styles.buttonSecondary }}
             >
               Cancelar
             </button>
           </>
         ) : (
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            style={{ ...styles.button, ...styles.buttonEdit }}
-          >
-            Editar textos
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              style={{ ...styles.button, ...styles.buttonEdit }}
+            >
+              Editar textos
+            </button>
+            <button
+              type="button"
+              onClick={handleExtractItems}
+              disabled={extractingItems || !(meeting.textoCompleto ?? "").trim()}
+              style={{ ...styles.button, ...styles.buttonEdit }}
+            >
+              {extractingItems ? "Extraindo…" : "Extrair itens com IA"}
+            </button>
+          </>
         )}
       </div>
     </article>
