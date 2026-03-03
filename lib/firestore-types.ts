@@ -5,7 +5,7 @@
  * - Coleção "meetings" (reuniões)
  *   - Campos: assunto, data, createdAt, updatedAt
  *   - Subcoleção "items" (itens da reunião)
- *     - Campos: content, order, createdAt
+ *     - Campos: content, order, createdAt, type, actionStatus, actionNote, actionDueDate
  */
 
 import type { Timestamp } from "firebase/firestore";
@@ -15,6 +15,14 @@ export interface MeetingItem {
   content: string;
   order: number;
   createdAt?: Timestamp | Date;
+  /** Tipo do item: anotação normal da reunião ou ação vinculada. */
+  type?: "note" | "action";
+  /** Status da ação (apenas quando type === "action"). */
+  actionStatus?: "open" | "done" | "cancelled";
+  /** Comentário curto sobre o andamento da ação. */
+  actionNote?: string;
+  /** Prazo opcional da ação. */
+  actionDueDate?: Timestamp | Date | string;
 }
 
 export interface Meeting {

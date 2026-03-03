@@ -191,10 +191,23 @@ export async function listMeetingItems(meetingId: string): Promise<MeetingItem[]
 export async function updateMeetingItem(
   meetingId: string,
   itemId: string,
-  data: Partial<Pick<MeetingItem, "content" | "order">>
+  data: Partial<
+    Pick<
+      MeetingItem,
+      "content" | "order" | "type" | "actionStatus" | "actionNote" | "actionDueDate"
+    >
+  >
 ): Promise<void> {
   const ref = doc(getDb(), MEETINGS, meetingId, ITEMS, itemId);
-  await updateDoc(ref, data);
+  const payload: Record<string, unknown> = {};
+  if (data.content !== undefined) payload.content = data.content;
+  if (data.order !== undefined) payload.order = data.order;
+  if (data.type !== undefined) payload.type = data.type;
+  if (data.actionStatus !== undefined) payload.actionStatus = data.actionStatus;
+  if (data.actionNote !== undefined) payload.actionNote = data.actionNote;
+  if (data.actionDueDate !== undefined) payload.actionDueDate = data.actionDueDate;
+  if (Object.keys(payload).length === 0) return;
+  await updateDoc(ref, payload);
 }
 
 /** Remove um item. */

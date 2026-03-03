@@ -18,13 +18,46 @@ export async function PATCH(
       body.content !== undefined ? String(body.content) : undefined;
     const order =
       body.order !== undefined ? Number(body.order) : undefined;
-    if (content === undefined && order === undefined) {
+    const type =
+      body.type === "action" || body.type === "note"
+        ? body.type
+        : undefined;
+    const actionStatus =
+      body.actionStatus === "open" ||
+      body.actionStatus === "done" ||
+      body.actionStatus === "cancelled"
+        ? body.actionStatus
+        : undefined;
+    const actionNote =
+      body.actionNote !== undefined ? String(body.actionNote) : undefined;
+    const actionDueDate =
+      body.actionDueDate !== undefined ? String(body.actionDueDate) : undefined;
+
+    if (
+      content === undefined &&
+      order === undefined &&
+      type === undefined &&
+      actionStatus === undefined &&
+      actionNote === undefined &&
+      actionDueDate === undefined
+    ) {
       return NextResponse.json(
-        { ok: false, error: "Envie content e/ou order" },
+        {
+          ok: false,
+          error:
+            "Envie pelo menos um campo para atualizar (content, order, type, actionStatus, actionNote ou actionDueDate)",
+        },
         { status: 400 }
       );
     }
-    await updateMeetingItem(meetingId, itemId, { content, order });
+    await updateMeetingItem(meetingId, itemId, {
+      content,
+      order,
+      type,
+      actionStatus,
+      actionNote,
+      actionDueDate,
+    });
     return NextResponse.json({ ok: true });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Erro ao atualizar item";
