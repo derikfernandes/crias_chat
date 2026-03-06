@@ -6,6 +6,50 @@ import type { Meeting, MeetingItem } from "@/lib/firestore-types";
 
 type MeetingWithItems = Meeting & { items: MeetingItem[] };
 
+const ACTION_STATUS_LABELS: Record<string, string> = {
+  open: "Em execução",
+  done: "Concluído",
+  cancelled: "Cancelado",
+};
+
+function itemDueDateToYyyyMmDd(item: MeetingItem): string {
+  const raw = item.actionDueDate as
+    | Date
+    | string
+    | { toDate?: () => Date; seconds?: number; nanoseconds?: number }
+    | null
+    | undefined;
+  if (!raw) return "";
+  if (raw instanceof Date) {
+    return raw.toISOString().slice(0, 10);
+  }
+  if (raw && typeof (raw as any).toDate === "function") {
+    return (raw as { toDate: () => Date }).toDate().toISOString().slice(0, 10);
+  }
+  if (raw && typeof (raw as any).seconds === "number") {
+    const r = raw as { seconds: number; nanoseconds?: number };
+    return new Date(r.seconds * 1000 + (r.nanoseconds ?? 0) / 1_000_000)
+      .toISOString()
+      .slice(0, 10);
+  }
+  if (typeof raw === "string") {
+    const d = new Date(raw);
+    return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
+  }
+  return "";
+}
+
+function formatDueDateForDisplay(item: MeetingItem): string {
+  const ymd = itemDueDateToYyyyMmDd(item);
+  if (!ymd) return "";
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
 const styles: Record<string, React.CSSProperties> = {
   card: {
     background: "rgba(255,255,255,0.06)",
@@ -171,6 +215,36 @@ const styles: Record<string, React.CSSProperties> = {
     gap: "0.5rem",
     marginBottom: "0.5rem",
   },
+  itemEditActionMeta: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.5rem",
+    flexWrap: "wrap",
+    marginTop: "0.35rem",
+    marginLeft: "2.25rem",
+  },
+  itemStatusSelect: {
+    padding: "0.3rem 0.5rem",
+    borderRadius: "6px",
+    border: "1px solid rgba(255,255,255,0.2)",
+    background: "rgba(0,0,0,0.25)",
+    color: "#eee",
+    fontSize: "0.8rem",
+    fontFamily: "inherit",
+  },
+  itemDueDateInput: {
+    padding: "0.3rem 0.5rem",
+    borderRadius: "6px",
+    border: "1px solid rgba(255,255,255,0.2)",
+    background: "rgba(0,0,0,0.25)",
+    color: "#eee",
+    fontSize: "0.8rem",
+    fontFamily: "inherit",
+  },
+  actionMetaLabel: {
+    fontSize: "0.75rem",
+    color: "#888",
+  },
   itemActionTag: {
     padding: "0.25rem 0.6rem",
     borderRadius: "999px",
@@ -190,6 +264,35 @@ const styles: Record<string, React.CSSProperties> = {
   },
   statusOk: { color: "#4ecdc4" },
   statusErr: { color: "#ff6b6b" },
+  actionCheckWrap: {
+    flexShrink: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  actionCheckBtn: {
+    width: "1.5rem",
+    height: "1.5rem",
+    borderRadius: "50%",
+    border: "2px solid rgba(78, 205, 196, 0.6)",
+    background: "transparent",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "transparent",
+    padding: 0,
+    flexShrink: 0,
+  },
+  actionCheckBtnDone: {
+    background: "#4ecdc4",
+    borderColor: "#4ecdc4",
+    color: "#1a1a2e",
+  },
+  actionCheckBtnDisabled: {
+    opacity: 0.6,
+    cursor: "not-allowed",
+  },
 };
 
 export default function MeetingCard({
@@ -236,6 +339,7 @@ export default function MeetingCard({
   );
   const [saving, setSaving] = useState(false);
   const [extractingItems, setExtractingItems] = useState(false);
+  const [togglingItemId, setTogglingItemId] = useState<string | null>(null);
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(
     null
   );
@@ -324,6 +428,59 @@ export default function MeetingCard({
     });
   }
 
+  function updateItemActionStatus(
+    index: number,
+    actionStatus: "open" | "done" | "cancelled"
+  ) {
+    setItems((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], actionStatus };
+      return next;
+    });
+  }
+
+  function updateItemActionDueDate(index: number, dateStr: string) {
+    setItems((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], actionDueDate: dateStr || undefined };
+      return next;
+    });
+  }
+
+  async function toggleActionDone(item: MeetingItem & { id: string }) {
+    if (!meeting.id || !item.id) return;
+    const nextStatus = (item.actionStatus as string) === "done" ? "open" : "done";
+    setTogglingItemId(item.id);
+    setStatus(null);
+    try {
+      const res = await fetch(
+        `/api/meetings/${meeting.id}/items/${item.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ actionStatus: nextStatus }),
+        }
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setStatus({ ok: false, msg: data?.error ?? "Erro ao atualizar status." });
+        return;
+      }
+      setItems((prev) =>
+        prev.map((i) =>
+          i.id === item.id ? { ...i, actionStatus: nextStatus } : i
+        )
+      );
+    } catch (e) {
+      setStatus({
+        ok: false,
+        msg: e instanceof Error ? e.message : "Erro ao atualizar.",
+      });
+    } finally {
+      setTogglingItemId(null);
+    }
+  }
+
   async function confirmEdit() {
     if (!meeting.id) return;
     setSaving(true);
@@ -365,15 +522,27 @@ export default function MeetingCard({
         const newType = (item.type as "note" | "action" | undefined) ?? "note";
         const contentChanged = orig?.content !== item.content;
         const typeChanged = origType !== newType;
+        const origStatus = (orig?.actionStatus as "open" | "done" | "cancelled" | undefined) ?? "open";
+        const newStatus = (item.actionStatus as "open" | "done" | "cancelled" | undefined) ?? "open";
+        const statusChanged = newType === "action" && origStatus !== newStatus;
+        const origDue = itemDueDateToYyyyMmDd(orig ?? {});
+        const newDue = newType === "action" ? (item.actionDueDate as string ?? "").slice(0, 10) : "";
+        const dueChanged = newType === "action" && origDue !== newDue;
         const payload: Record<string, unknown> = {};
         if (contentChanged) payload.content = item.content;
         if (typeChanged) {
           payload.type = newType;
           if (newType === "action") {
             payload.actionStatus = item.actionStatus ?? "open";
+            const dueStr = (item.actionDueDate as string)?.slice(0, 10) ?? "";
+            payload.actionDueDate = dueStr || null;
           } else {
             payload.actionStatus = undefined;
+            payload.actionDueDate = null;
           }
+        } else {
+          if (statusChanged) payload.actionStatus = newStatus;
+          if (dueChanged) payload.actionDueDate = newDue || null;
         }
         if (Object.keys(payload).length === 0) continue;
         const res = await fetch(
@@ -481,38 +650,69 @@ export default function MeetingCard({
           <div style={{ marginTop: "0.25rem" }}>
             {items.map((item, idx) => {
               const isAction = (item.type as "note" | "action" | undefined) === "action";
+              const status = (item.actionStatus as "open" | "done" | "cancelled" | undefined) ?? "open";
+              const dueYmd = isAction ? (itemDueDateToYyyyMmDd(item) || (item.actionDueDate as string)?.slice(0, 10) ?? "") : "";
               return (
-                <div
-                  key={item.id ?? idx}
-                  style={{
-                    ...styles.itemEdit,
-                    ...(isAction ? styles.actionItem : {}),
-                  }}
-                >
-                  <span
+                <div key={item.id ?? idx}>
+                  <div
                     style={{
-                      ...styles.itemOrder,
-                      ...(isAction ? styles.actionItemOrder : {}),
+                      ...styles.itemEdit,
+                      ...(isAction ? styles.actionItem : {}),
                     }}
                   >
-                    {item.order}
-                  </span>
-                  <input
-                    type="text"
-                    value={item.content}
-                    onChange={(e) => updateItemContent(idx, e.target.value)}
-                    style={styles.input}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => toggleItemType(idx)}
-                    style={{
-                      ...styles.itemActionTag,
-                      ...(isAction ? styles.itemActionTagActive : {}),
-                    }}
-                  >
-                    {isAction ? "Ação" : "Transformar em ação"}
-                  </button>
+                    <span
+                      style={{
+                        ...styles.itemOrder,
+                        ...(isAction ? styles.actionItemOrder : {}),
+                      }}
+                    >
+                      {item.order}
+                    </span>
+                    <input
+                      type="text"
+                      value={item.content}
+                      onChange={(e) => updateItemContent(idx, e.target.value)}
+                      style={styles.input}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => toggleItemType(idx)}
+                      style={{
+                        ...styles.itemActionTag,
+                        ...(isAction ? styles.itemActionTagActive : {}),
+                      }}
+                    >
+                      {isAction ? "Ação" : "Transformar em ação"}
+                    </button>
+                  </div>
+                  {isAction && (
+                    <div style={styles.itemEditActionMeta}>
+                      <span style={styles.actionMetaLabel}>Status:</span>
+                      <select
+                        value={status}
+                        onChange={(e) =>
+                          updateItemActionStatus(
+                            idx,
+                            e.target.value as "open" | "done" | "cancelled"
+                          )
+                        }
+                        style={styles.itemStatusSelect}
+                      >
+                        <option value="open">Em execução</option>
+                        <option value="done">Concluído</option>
+                        <option value="cancelled">Cancelado</option>
+                      </select>
+                      <span style={styles.actionMetaLabel}>Data prevista:</span>
+                      <input
+                        type="date"
+                        value={dueYmd}
+                        onChange={(e) =>
+                          updateItemActionDueDate(idx, e.target.value)
+                        }
+                        style={styles.itemDueDateInput}
+                      />
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -521,6 +721,8 @@ export default function MeetingCard({
           <ol style={styles.itemsList}>
             {items.map((item, idx) => {
               const isAction = (item.type as "note" | "action" | undefined) === "action";
+              const status = (item.actionStatus as "open" | "done" | "cancelled" | undefined) ?? "open";
+              const dueStr = formatDueDateForDisplay(item);
               return (
                 <li
                   key={item.id ?? idx}
@@ -537,21 +739,80 @@ export default function MeetingCard({
                   >
                     {item.order}
                   </span>
+                  {isAction && (
+                    <span style={styles.actionCheckWrap}>
+                      <button
+                        type="button"
+                        title={status === "done" ? "Desmarcar conclusão" : "Marcar como concluído"}
+                        style={{
+                          ...styles.actionCheckBtn,
+                          ...(status === "done" ? styles.actionCheckBtnDone : {}),
+                          ...(togglingItemId === item.id ? styles.actionCheckBtnDisabled : {}),
+                        }}
+                        onClick={() => toggleActionDone(item)}
+                        disabled={togglingItemId === item.id}
+                        aria-label={status === "done" ? "Concluído" : "Marcar como concluído"}
+                      >
+                        {status === "done" ? "✓" : ""}
+                      </button>
+                    </span>
+                  )}
                   <span style={styles.itemContent}>
                     {item.content}
-                    {isAction && (
+                    {isAction && status !== "done" && (
+                      <>
+                        {status === "cancelled" && (
+                          <span
+                            style={{
+                              marginLeft: "0.4rem",
+                              padding: "0.1rem 0.45rem",
+                              borderRadius: "999px",
+                              fontSize: "0.7rem",
+                              fontWeight: 600,
+                              background: "rgba(158, 158, 158, 0.3)",
+                              color: "#bdbdbd",
+                            }}
+                          >
+                            Cancelado
+                          </span>
+                        )}
+                        {status === "open" && (
+                          <span
+                            style={{
+                              marginLeft: "0.4rem",
+                              padding: "0.1rem 0.45rem",
+                              borderRadius: "999px",
+                              fontSize: "0.7rem",
+                              fontWeight: 600,
+                              background: "rgba(78,205,196,0.25)",
+                              color: "#4ecdc4",
+                            }}
+                          >
+                            Em execução
+                          </span>
+                        )}
+                        {dueStr && (
+                          <span
+                            style={{
+                              marginLeft: "0.5rem",
+                              fontSize: "0.8rem",
+                              color: "#888",
+                            }}
+                          >
+                            Prevista: {dueStr}
+                          </span>
+                        )}
+                      </>
+                    )}
+                    {isAction && status === "done" && dueStr && (
                       <span
                         style={{
-                          marginLeft: "0.4rem",
-                          padding: "0.1rem 0.45rem",
-                          borderRadius: "999px",
-                          fontSize: "0.7rem",
-                          fontWeight: 600,
-                          background: "rgba(78,205,196,0.25)",
-                          color: "#4ecdc4",
+                          marginLeft: "0.5rem",
+                          fontSize: "0.8rem",
+                          color: "#888",
                         }}
                       >
-                        Ação
+                        Prevista: {dueStr}
                       </span>
                     )}
                   </span>

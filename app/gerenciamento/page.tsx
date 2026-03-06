@@ -5,7 +5,7 @@ import {
   formatMeetingDateStr,
 } from "@/lib/meetings";
 import type { Meeting, MeetingItem } from "@/lib/firestore-types";
-import MeetingCard from "./MeetingCard";
+import GerenciamentoList from "./GerenciamentoList";
 
 /** Sempre buscar dados no servidor; nunca usar cache do Next nem do Firestore. */
 export const dynamic = "force-dynamic";
@@ -63,53 +63,7 @@ export default async function GerenciamentoPage() {
         )}
 
         {!error && meetingsWithItems.length > 0 && (
-          <>
-            <div style={styles.stats}>
-              <span style={styles.statsBadge}>
-                {meetingsWithItems.length}{" "}
-                {meetingsWithItems.length === 1 ? "reunião" : "reuniões"}
-              </span>
-              <span style={styles.statsBadge}>
-                {meetingsWithItems.reduce(
-                  (acc, m) => acc + m.items.length,
-                  0
-                )}{" "}
-                itens no total
-              </span>
-              <span style={styles.statsBadgeAccent}>
-                {meetingsWithItems.reduce(
-                  (acc, m) =>
-                    acc +
-                    m.items.filter(
-                      (it) =>
-                        (it.type as "note" | "action" | undefined) === "action"
-                    ).length,
-                  0
-                )}{" "}
-                {meetingsWithItems.reduce(
-                  (acc, m) =>
-                    acc +
-                    m.items.filter(
-                      (it) =>
-                        (it.type as "note" | "action" | undefined) === "action"
-                    ).length,
-                  0
-                ) === 1
-                  ? "ação"
-                  : "ações"}
-              </span>
-            </div>
-
-            <div style={styles.list}>
-              {meetingsWithItems.map((meeting) => (
-                <MeetingCard
-                  key={meeting.id}
-                  meeting={meeting}
-                  formattedDate={formatMeetingDateStr(meeting)}
-                />
-              ))}
-            </div>
-          </>
+          <GerenciamentoList meetings={meetingsWithItems} />
         )}
       </div>
     </main>

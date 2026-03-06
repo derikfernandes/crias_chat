@@ -79,10 +79,24 @@ export async function listMeetings(): Promise<Meeting[]> {
 
 /** Converte campo data do Firestore para Date. */
 function meetingDate(m: Meeting): Date {
-  const d = m.data;
+  const d = m.data as
+    | Date
+    | string
+    | { toDate?: () => Date; seconds?: number; nanoseconds?: number }
+    | null
+    | undefined;
   if (d instanceof Date) return d;
-  if (d && typeof (d as { toDate?: () => Date }).toDate === "function") return (d as { toDate: () => Date }).toDate();
-  if (typeof d === "string") return new Date(d);
+  if (d && typeof (d as any).toDate === "function") {
+    return (d as { toDate: () => Date }).toDate();
+  }
+  if (d && typeof (d as any).seconds === "number") {
+    const ts = d as { seconds: number; nanoseconds?: number };
+    return new Date(ts.seconds * 1000 + (ts.nanoseconds ?? 0) / 1_000_000);
+  }
+  if (typeof d === "string") {
+    const parsed = new Date(d);
+    return Number.isNaN(parsed.getTime()) ? new Date(0) : parsed;
+  }
   return new Date(0);
 }
 
