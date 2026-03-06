@@ -651,7 +651,9 @@ export default function MeetingCard({
             {items.map((item, idx) => {
               const isAction = (item.type as "note" | "action" | undefined) === "action";
               const status = (item.actionStatus as "open" | "done" | "cancelled" | undefined) ?? "open";
-              const dueYmd = isAction ? (itemDueDateToYyyyMmDd(item) || (item.actionDueDate as string)?.slice(0, 10) ?? "") : "";
+              const dueYmd = isAction
+                ? ((itemDueDateToYyyyMmDd(item) || (item.actionDueDate as string)?.slice(0, 10)) ?? "")
+                : "";
               return (
                 <div key={item.id ?? idx}>
                   <div

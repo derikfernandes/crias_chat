@@ -11,6 +11,7 @@ import {
   getDocsFromServer,
   updateDoc,
   deleteDoc,
+  deleteField,
   query,
   orderBy,
   serverTimestamp,
@@ -208,9 +209,11 @@ export async function updateMeetingItem(
   data: Partial<
     Pick<
       MeetingItem,
-      "content" | "order" | "type" | "actionStatus" | "actionNote" | "actionDueDate"
+      "content" | "order" | "type" | "actionStatus" | "actionNote"
     >
-  >
+  > & {
+    actionDueDate?: MeetingItem["actionDueDate"] | null;
+  }
 ): Promise<void> {
   const ref = doc(getDb(), MEETINGS, meetingId, ITEMS, itemId);
   const payload: Record<string, unknown> = {};
@@ -219,7 +222,10 @@ export async function updateMeetingItem(
   if (data.type !== undefined) payload.type = data.type;
   if (data.actionStatus !== undefined) payload.actionStatus = data.actionStatus;
   if (data.actionNote !== undefined) payload.actionNote = data.actionNote;
-  if (data.actionDueDate !== undefined) payload.actionDueDate = data.actionDueDate;
+  if (data.actionDueDate !== undefined) {
+    payload.actionDueDate =
+      data.actionDueDate === null ? deleteField() : data.actionDueDate;
+  }
   if (Object.keys(payload).length === 0) return;
   await updateDoc(ref, payload);
 }
