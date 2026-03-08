@@ -15,6 +15,11 @@ export default function Home() {
           Gerenciamento (ver dados do banco) →
         </Link>
       </p>
+      <p style={{ marginTop: "0.5rem" }}>
+        <Link href="/kanban" style={{ color: "#4ecdc4" }}>
+          Kanban (ações e atividades) →
+        </Link>
+      </p>
     </main>
   );
 }
