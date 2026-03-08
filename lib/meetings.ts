@@ -11,6 +11,7 @@ import {
   getDocsFromServer,
   updateDoc,
   deleteDoc,
+  deleteField,
   query,
   orderBy,
   serverTimestamp,
@@ -79,10 +80,24 @@ export async function listMeetings(): Promise<Meeting[]> {
 
 /** Converte campo data do Firestore para Date. */
 function meetingDate(m: Meeting): Date {
-  const d = m.data;
+  const d = m.data as
+    | Date
+    | string
+    | { toDate?: () => Date; seconds?: number; nanoseconds?: number }
+    | null
+    | undefined;
   if (d instanceof Date) return d;
-  if (d && typeof (d as { toDate?: () => Date }).toDate === "function") return (d as { toDate: () => Date }).toDate();
-  if (typeof d === "string") return new Date(d);
+  if (d && typeof (d as any).toDate === "function") {
+    return (d as { toDate: () => Date }).toDate();
+  }
+  if (d && typeof (d as any).seconds === "number") {
+    const ts = d as { seconds: number; nanoseconds?: number };
+    return new Date(ts.seconds * 1000 + (ts.nanoseconds ?? 0) / 1_000_000);
+  }
+  if (typeof d === "string") {
+    const parsed = new Date(d);
+    return Number.isNaN(parsed.getTime()) ? new Date(0) : parsed;
+  }
   return new Date(0);
 }
 
@@ -194,9 +209,11 @@ export async function updateMeetingItem(
   data: Partial<
     Pick<
       MeetingItem,
-      "content" | "order" | "type" | "actionStatus" | "actionNote" | "actionDueDate"
+      "content" | "order" | "type" | "actionStatus" | "actionNote"
     >
-  >
+  > & {
+    actionDueDate?: MeetingItem["actionDueDate"] | null;
+  }
 ): Promise<void> {
   const ref = doc(getDb(), MEETINGS, meetingId, ITEMS, itemId);
   const payload: Record<string, unknown> = {};
@@ -205,7 +222,10 @@ export async function updateMeetingItem(
   if (data.type !== undefined) payload.type = data.type;
   if (data.actionStatus !== undefined) payload.actionStatus = data.actionStatus;
   if (data.actionNote !== undefined) payload.actionNote = data.actionNote;
-  if (data.actionDueDate !== undefined) payload.actionDueDate = data.actionDueDate;
+  if (data.actionDueDate !== undefined) {
+    payload.actionDueDate =
+      data.actionDueDate === null ? deleteField() : data.actionDueDate;
+  }
   if (Object.keys(payload).length === 0) return;
   await updateDoc(ref, payload);
 }

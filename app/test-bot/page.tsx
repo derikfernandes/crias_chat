@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useRef, useEffect } from "react";
 
 type Message = {
@@ -182,6 +183,11 @@ export default function TestBotPage() {
       )}
 
       <div style={styles.card}>
+        <div style={styles.homeButtonRow}>
+          <Link href="/" style={styles.homeButton}>
+            ← Início
+          </Link>
+        </div>
         <h1 style={styles.title}>Testar Bot (localhost)</h1>
         <p style={styles.subtitle}>
           Simula conversas com o bot sem conectar ao Telegram. A primeira mensagem recebe &quot;oi&quot;, as seguintes &quot;bot ta bão&quot;.
@@ -369,6 +375,22 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "12px",
     padding: "1.5rem",
     boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
+  },
+  homeButtonRow: {
+    display: "flex",
+    justifyContent: "flex-start",
+    marginBottom: "0.75rem",
+  },
+  homeButton: {
+    display: "inline-block",
+    padding: "0.45rem 0.75rem",
+    borderRadius: "8px",
+    border: "1px solid rgba(78, 205, 196, 0.45)",
+    color: "#4ecdc4",
+    textDecoration: "none",
+    fontSize: "0.85rem",
+    fontWeight: 600,
+    background: "rgba(78, 205, 196, 0.12)",
   },
   title: {
     margin: "0 0 0.5rem",

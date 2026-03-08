@@ -30,8 +30,13 @@ export async function PATCH(
         : undefined;
     const actionNote =
       body.actionNote !== undefined ? String(body.actionNote) : undefined;
+    const actionDueDateRaw = body.actionDueDate;
     const actionDueDate =
-      body.actionDueDate !== undefined ? String(body.actionDueDate) : undefined;
+      actionDueDateRaw === undefined
+        ? undefined
+        : actionDueDateRaw === null || actionDueDateRaw === ""
+        ? null
+        : String(actionDueDateRaw);
 
     if (
       content === undefined &&
