@@ -4,6 +4,7 @@
  */
 
 import { initializeApp, type FirebaseApp } from "firebase/app";
+import { getAuth, type Auth } from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
 import { getAnalytics, type Analytics } from "firebase/analytics";
 
@@ -18,6 +19,7 @@ const firebaseConfig = {
 };
 
 let app: FirebaseApp | null = null;
+let auth: Auth | null = null;
 let db: Firestore | null = null;
 let analytics: Analytics | null = null;
 
@@ -31,6 +33,14 @@ function getApp(): FirebaseApp {
     app = initializeApp(firebaseConfig);
   }
   return app;
+}
+
+/** Retorna a instância do Auth (Firebase Authentication). */
+export function getAuthInstance(): Auth {
+  if (!auth) {
+    auth = getAuth(getApp());
+  }
+  return auth;
 }
 
 /** Retorna a instância do Firestore (conexão com o banco). */

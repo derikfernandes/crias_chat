@@ -4,6 +4,7 @@ import {
   listMeetingItems,
   addMeetingItem,
   deleteMeetingItem,
+  getDefaultUserEmail,
 } from "@/lib/meetings";
 import { extractItemsFromText } from "@/lib/vertex-ai";
 
@@ -57,10 +58,12 @@ export async function POST(
       if (item.id) await deleteMeetingItem(meetingId, item.id);
     }
 
+    const userEmail = meeting.userEmail ?? getDefaultUserEmail();
     for (let i = 0; i < extractedItems.length; i++) {
       await addMeetingItem(meetingId, {
         content: extractedItems[i],
         order: i,
+        userEmail,
       });
     }
 

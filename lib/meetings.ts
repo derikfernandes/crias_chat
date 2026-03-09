@@ -13,6 +13,7 @@ import {
   deleteDoc,
   deleteField,
   query,
+  where,
   orderBy,
   serverTimestamp,
   Timestamp,
@@ -24,6 +25,13 @@ import type { Meeting, MeetingItem, MeetingCreate, MeetingItemCreate } from "./f
 
 const MEETINGS = "meetings";
 const ITEMS = "items";
+
+/** Usado apenas na migração de dados existentes (derikluizfernandes@gmail.com). Novas reuniões exigem o e-mail do login. */
+export const MIGRATION_USER_EMAIL = "derikluizfernandes@gmail.com";
+
+export function getDefaultUserEmail(): string {
+  return process.env.USER_EMAIL?.trim() || MIGRATION_USER_EMAIL;
+}
 
 function meetingsCol() {
   return collection(getDb(), MEETINGS) as CollectionReference<Meeting>;
@@ -51,12 +59,17 @@ function toFirestoreDate(value: MeetingCreate["data"]): Timestamp | Date {
   return Timestamp.fromDate(new Date(str));
 }
 
-/** Cria uma nova reunião e retorna o id. */
+/** Cria uma nova reunião e retorna o id. Exige userEmail do usuário logado/vinculado (não use e-mail fixo para novas reuniões). */
 export async function createMeeting(data: MeetingCreate): Promise<string> {
+  const userEmail = data.userEmail?.trim();
+  if (!userEmail) {
+    throw new Error("userEmail é obrigatório para novas reuniões (use o e-mail do login cadastrado).");
+  }
   const payload = {
     assunto: data.assunto,
     data: toFirestoreDate(data.data),
     ...(data.textoCompleto != null && data.textoCompleto !== "" && { textoCompleto: data.textoCompleto }),
+    userEmail,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
@@ -71,9 +84,15 @@ export async function getMeeting(id: string): Promise<Meeting | null> {
   return { id: snap.id, ...snap.data() } as Meeting;
 }
 
-/** Lista reuniões (sempre do servidor, sem cache). */
-export async function listMeetings(): Promise<Meeting[]> {
-  const q = query(meetingsCol(), orderBy("data", "desc"));
+/** Lista reuniões do usuário (sempre do servidor, sem cache). Sem userEmail retorna [] (chat não vinculado). */
+export async function listMeetings(userEmail?: string): Promise<Meeting[]> {
+  const email = userEmail?.trim();
+  if (!email) return [];
+  const q = query(
+    meetingsCol(),
+    where("userEmail", "==", email),
+    orderBy("data", "desc")
+  );
   const snap = await getDocsFromServer(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Meeting));
 }
@@ -120,8 +139,8 @@ export function formatMeetingForContext(m: Meeting): string {
 }
 
 /** Lista reuniões dos últimos N dias (fallback quando não há data na conversa). */
-export async function listMeetingsRecent(days: number): Promise<Meeting[]> {
-  const all = await listMeetings();
+export async function listMeetingsRecent(days: number, userEmail?: string): Promise<Meeting[]> {
+  const all = await listMeetings(userEmail);
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - days);
   cutoff.setHours(0, 0, 0, 0);
@@ -152,9 +171,10 @@ function isWithinDays(localDay: { y: number; m: number; day: number }, center: D
 /** Lista reuniões próximas a uma data (ex.: dia da reunião que o usuário está inputando). Comparação por dia local. */
 export async function listMeetingsNearDate(
   date: Date,
-  windowDays: number = 1
+  windowDays: number = 1,
+  userEmail?: string
 ): Promise<Meeting[]> {
-  const all = await listMeetings();
+  const all = await listMeetings(userEmail);
   const center = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12, 0, 0, 0);
   return all.filter((m) => {
     const d = meetingDate(m);
@@ -180,14 +200,19 @@ export async function deleteMeeting(id: string): Promise<void> {
   await deleteDoc(meetingRef(id));
 }
 
-/** Adiciona um item a uma reunião. */
+/** Adiciona um item a uma reunião. Exige userEmail do usuário logado/vinculado. */
 export async function addMeetingItem(
   meetingId: string,
   data: MeetingItemCreate
 ): Promise<string> {
+  const userEmail = data.userEmail?.trim();
+  if (!userEmail) {
+    throw new Error("userEmail é obrigatório ao adicionar itens (use o e-mail do login cadastrado).");
+  }
   const col = itemsCol(meetingId);
   const payload = {
     ...data,
+    userEmail,
     createdAt: serverTimestamp(),
   };
   const ref = await addDoc(col, payload);

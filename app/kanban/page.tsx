@@ -1,19 +1,23 @@
+"use client";
+
 import Link from "next/link";
-import { listMeetings, listMeetingItems } from "@/lib/meetings";
-import type { Meeting, MeetingItem } from "@/lib/firestore-types";
+import { useEffect, useState } from "react";
+import { useAuth } from "@/contexts/AuthContext";
+import type { MeetingItem } from "@/lib/firestore-types";
 import KanbanBoard from "./KanbanBoard";
 
-export const dynamic = "force-dynamic";
+type ActionWithMeeting = MeetingItem & {
+  meetingId: string;
+  meetingAssunto: string;
+};
 
-async function getActionsFromMeetings(): Promise<
-  Array<MeetingItem & { meetingId: string; meetingAssunto: string }>
-> {
-  const meetings = await listMeetings();
-  const actions: Array<MeetingItem & { meetingId: string; meetingAssunto: string }> = [];
+function extractActionsFromMeetings(
+  meetings: Array<{ id?: string; assunto?: string; items: MeetingItem[] }>
+): ActionWithMeeting[] {
+  const actions: ActionWithMeeting[] = [];
   for (const m of meetings) {
     if (!m.id) continue;
-    const items = await listMeetingItems(m.id);
-    for (const item of items) {
+    for (const item of m.items ?? []) {
       if (item.type === "action") {
         actions.push({
           ...item,
@@ -26,15 +30,43 @@ async function getActionsFromMeetings(): Promise<
   return actions;
 }
 
-export default async function KanbanPage() {
-  let actions: Array<MeetingItem & { meetingId: string; meetingAssunto: string }> = [];
-  let error: string | null = null;
+export default function KanbanPage() {
+  const { user, loading: authLoading } = useAuth();
+  const [actions, setActions] = useState<ActionWithMeeting[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  try {
-    actions = await getActionsFromMeetings();
-  } catch (e) {
-    error = e instanceof Error ? e.message : "Erro ao carregar ações.";
-  }
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user?.email?.trim()) {
+      setActions([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    fetch("/api/meetings", {
+      headers: { "X-User-Email": user.email },
+      cache: "no-store",
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.ok && Array.isArray(data.meetings)) {
+          setActions(extractActionsFromMeetings(data.meetings));
+        } else {
+          setActions([]);
+        }
+        setError(
+          data?.ok ? null : (data?.error ?? "Erro ao carregar ações.")
+        );
+      })
+      .catch(() => {
+        setActions([]);
+        setError("Erro ao carregar ações.");
+      })
+      .finally(() => setLoading(false));
+  }, [user?.email, authLoading]);
 
   return (
     <main style={styles.main}>
@@ -49,22 +81,31 @@ export default async function KanbanPage() {
           </Link>
         </div>
 
-        {error && (
+        {authLoading || loading ? (
+          <div style={styles.empty}>
+            <p>Carregando ações…</p>
+          </div>
+        ) : !user ? (
+          <div style={styles.empty}>
+            <p>Faça login para ver o Kanban de ações.</p>
+            <p style={styles.emptyHint}>
+              Itens do tipo &quot;action&quot; das suas reuniões aparecem aqui.
+            </p>
+          </div>
+        ) : error ? (
           <div style={styles.error}>
             <strong>Erro:</strong> {error}
           </div>
-        )}
-
-        {!error && actions.length === 0 && (
+        ) : actions.length === 0 ? (
           <div style={styles.empty}>
             <p>Nenhuma ação cadastrada.</p>
             <p style={styles.emptyHint}>
               Itens do tipo &quot;action&quot; das reuniões aparecem aqui.
             </p>
           </div>
+        ) : (
+          <KanbanBoard actions={actions} />
         )}
-
-        {!error && actions.length > 0 && <KanbanBoard actions={actions} />}
       </div>
     </main>
   );

@@ -352,7 +352,7 @@ export default function MeetingCard({
         (a, b) => (a.order ?? 0) - (b.order ?? 0)
       ) as Array<MeetingItem & { id: string }>
     );
-  }, [editing, meeting.items]);
+  }, [meeting.items]);
 
   async function handleExtractItems() {
     if (!meeting.id) return;
@@ -565,7 +565,6 @@ export default function MeetingCard({
       }
       setStatus({ ok: true, msg: "Alterações salvas no banco de dados." });
       setEditing(false);
-      router.refresh();
     } catch (e) {
       setStatus({
         ok: false,

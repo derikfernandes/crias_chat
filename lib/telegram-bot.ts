@@ -23,6 +23,14 @@ import {
   buildForcedMatchInstructionForAlteracao,
   type Category,
 } from "@/lib/router";
+import {
+  getChatState,
+  getChatStateByUserEmail,
+  saveChatState,
+  CHAT_STATE_MAX_HISTORY as MAX_HISTORY,
+  CHAT_STATE_MAX_SAVED_KEYS as MAX_SAVED_KEYS_PER_CHAT,
+  type ChatState,
+} from "@/lib/chat-state";
 
 /** Entrada de debug: qual etapa respondeu e o que retornou. */
 export interface DebugStep {
@@ -32,36 +40,19 @@ export interface DebugStep {
   reply: string;
 }
 
+/** ChatId fixo usado pelo test-bot na web. Histórico é isolado por userEmail (doc 999999-email). */
+export const TEST_CHAT_ID = 999999;
+
 export interface GetReplyOptions {
   /** Se true, retorna { reply, debug } em vez de só a string. */
   returnDebug?: boolean;
+  /** E-mail do usuário logado (web). Vincula o chat a este cadastro; novas reuniões usam este e-mail. */
+  userEmail?: string;
 }
 
-const MAX_HISTORY = 20;
-const chatHistory = new Map<number, ChatMessage[]>();
-const savedMeetingKeys = new Map<number, Set<string>>();
-const MAX_SAVED_KEYS_PER_CHAT = 10;
-
-const pendingUpdate = new Map<number, { meetingId: string; assunto: string }>();
-const pendingUpdateConfirm = new Map<number, { meetingId: string; assunto: string }>();
-const pendingDelete = new Map<number, { meetingId: string; assunto: string; dataStr: string }>();
-const pendingSave = new Map<
-  number,
-  { assunto: string; data: string; textoCompleto?: string; items: string[] }
->();
-
-/** Quando o Classificador retornou MULTIPLAS: opções e pergunta ao usuário. */
-const pendingChoice = new Map<number, { options: Category[]; reply: string }>();
-
-function getHistory(chatId: number): ChatMessage[] {
-  return chatHistory.get(chatId) ?? [];
-}
-
-function pushToHistory(chatId: number, userText: string, modelText: string): void {
-  const list = chatHistory.get(chatId) ?? [];
-  list.push({ role: "user", text: userText }, { role: "model", text: modelText });
-  if (list.length > MAX_HISTORY) list.splice(0, list.length - MAX_HISTORY);
-  chatHistory.set(chatId, list);
+function pushToHistory(state: ChatState, userText: string, modelText: string): void {
+  state.history.push({ role: "user", text: userText }, { role: "model", text: modelText });
+  if (state.history.length > MAX_HISTORY) state.history.splice(0, state.history.length - MAX_HISTORY);
 }
 
 function meetingKey(assunto: string, data: string): string {
@@ -90,43 +81,44 @@ function normalizeExtractedDate(dateStr: string): string {
   return dateStr;
 }
 
-function wasAlreadySaved(chatId: number, key: string): boolean {
-  return savedMeetingKeys.get(chatId)?.has(key) ?? false;
+function wasAlreadySaved(state: ChatState, key: string): boolean {
+  return state.savedMeetingKeys.includes(key);
 }
 
-function markAsSaved(chatId: number, key: string): void {
-  let set = savedMeetingKeys.get(chatId);
-  if (!set) {
-    set = new Set();
-    savedMeetingKeys.set(chatId, set);
-  }
-  set.add(key);
-  if (set.size > MAX_SAVED_KEYS_PER_CHAT) {
-    const arr = Array.from(set);
-    arr.splice(0, arr.length - MAX_SAVED_KEYS_PER_CHAT);
-    savedMeetingKeys.set(chatId, new Set(arr));
-  }
+function markAsSaved(state: ChatState, key: string): void {
+  state.savedMeetingKeys = [...state.savedMeetingKeys.filter((k) => k !== key), key].slice(
+    -MAX_SAVED_KEYS_PER_CHAT
+  );
 }
 
-async function doSavePendingMeeting(chatId: number): Promise<string> {
-  const pending = pendingSave.get(chatId);
+async function doSavePendingMeeting(chatId: number, state: ChatState): Promise<string> {
+  const pending = state.pendingSave;
   if (!pending) return "";
+  if (!state.userEmail?.trim()) {
+    state.pendingSave = null;
+    return "Para salvar reuniões, vincule sua conta: use o chat pela web (logado) ou vincule este chat ao seu cadastro.";
+  }
 
   try {
     const meetingId = await createMeeting({
       assunto: pending.assunto,
       data: pending.data,
+      userEmail: state.userEmail,
       ...(pending.textoCompleto && { textoCompleto: pending.textoCompleto }),
     });
     for (let i = 0; i < pending.items.length; i++) {
-      await addMeetingItem(meetingId, { content: pending.items[i], order: i });
+      await addMeetingItem(meetingId, {
+        content: pending.items[i],
+        order: i,
+        userEmail: state.userEmail,
+      });
     }
-    markAsSaved(chatId, meetingKey(pending.assunto, pending.data));
-    pendingSave.delete(chatId);
+    markAsSaved(state, meetingKey(pending.assunto, pending.data));
+    state.pendingSave = null;
     return `✅ Reunião "${pending.assunto}" salva no banco (assunto, data e itens).`;
   } catch (err) {
     console.error("[telegram-bot] save pending meeting error:", err);
-    pendingSave.delete(chatId);
+    state.pendingSave = null;
     return "Não consegui salvar. Tente de novo.";
   }
 }
@@ -174,14 +166,15 @@ function findMatchingMeetingFromHistory(history: ChatMessage[], meetings: Meetin
   return null;
 }
 
-async function buildRecentMeetingsContext(userMessage: string, history: ChatMessage[]): Promise<{
-  block: string;
-  meetings: Meeting[];
-}> {
+async function buildRecentMeetingsContext(
+  userMessage: string,
+  history: ChatMessage[],
+  userEmail?: string
+): Promise<{ block: string; meetings: Meeting[] }> {
   try {
     const dateStr = await inferMeetingDateFromConversation(userMessage, history);
     const searchDate = dateStr ? new Date(dateStr) : new Date();
-    const meetings = await listMeetingsNearDate(searchDate, NEAR_DATE_WINDOW_DAYS);
+    const meetings = await listMeetingsNearDate(searchDate, NEAR_DATE_WINDOW_DAYS, userEmail);
 
     if (meetings.length === 0) {
       const block = dateStr
@@ -197,9 +190,9 @@ async function buildRecentMeetingsContext(userMessage: string, history: ChatMess
   }
 }
 
-async function buildConsultaMeetingsBlock(): Promise<{ block: string; meetings: Meeting[] }> {
+async function buildConsultaMeetingsBlock(userEmail?: string): Promise<{ block: string; meetings: Meeting[] }> {
   try {
-    const meetings = await listMeetingsRecent(30);
+    const meetings = await listMeetingsRecent(30, userEmail);
     if (meetings.length === 0) return { block: "Nenhuma reunião nos últimos 30 dias.", meetings: [] };
     return { block: meetings.map(formatMeetingForContext).join("\n\n"), meetings };
   } catch (err) {
@@ -208,28 +201,27 @@ async function buildConsultaMeetingsBlock(): Promise<{ block: string; meetings: 
   }
 }
 
-async function doUpdateMeeting(chatId: number, userMessage: string): Promise<string> {
-  const pending = pendingUpdate.get(chatId);
+async function doUpdateMeeting(state: ChatState, userMessage: string): Promise<string> {
+  const pending = state.pendingUpdate;
   if (!pending) return "";
 
   try {
     const meeting = await getMeeting(pending.meetingId);
     if (!meeting) return "Reunião não encontrada no banco.";
 
-    const history = getHistory(chatId);
     const historyWithConfirm = [
-      ...history,
+      ...state.history,
       { role: "user" as const, text: userMessage },
     ];
     const existingContent = meeting.textoCompleto ?? "";
     const textoCompleto = await extractMeetingUpdateFromHistory(historyWithConfirm, existingContent);
 
     await updateMeeting(pending.meetingId, { textoCompleto: textoCompleto || existingContent });
-    pendingUpdate.delete(chatId);
+    state.pendingUpdate = null;
     return `✅ Reunião "${pending.assunto}" atualizada com o novo conteúdo.`;
   } catch (err) {
     console.error("[telegram-bot] update meeting error:", err);
-    pendingUpdate.delete(chatId);
+    state.pendingUpdate = null;
     return "Não consegui atualizar. Tente descrever de novo o que quer acrescentar ou alterar.";
   }
 }
@@ -258,9 +250,29 @@ export async function getReplyForChat(
   const text = (userMessage ?? "").trim();
   if (!text) return "Envie uma mensagem de texto.";
 
-  const history = getHistory(chatId);
+  const userEmail = options?.userEmail?.trim();
+  let state: ChatState;
+  let stateDocId: string | undefined;
+  if (chatId === TEST_CHAT_ID && userEmail) {
+    const result = await getChatStateByUserEmail(chatId, userEmail);
+    state = result.state;
+    stateDocId = result.saveDocId;
+  } else {
+    state = await getChatState(chatId);
+    stateDocId = undefined;
+  }
+  if (userEmail) {
+    state.userEmail = userEmail;
+  }
   const debugSteps: DebugStep[] = [];
   const wantDebug = options?.returnDebug === true;
+
+  const persistAndReturn = async (
+    reply: string | { reply: string; debug: DebugStep[] }
+  ): Promise<string | { reply: string; debug: DebugStep[] }> => {
+    await saveChatState(chatId, state, stateDocId);
+    return reply;
+  };
 
   function returnReply(reply: string, steps?: DebugStep[]): string | { reply: string; debug: DebugStep[] } {
     if (wantDebug) {
@@ -271,144 +283,144 @@ export async function getReplyForChat(
   }
 
   // ----- 0. Confirmação para SALVAR reunião
-  const pendingS = pendingSave.get(chatId);
+  const pendingS = state.pendingSave;
   if (pendingS) {
     if (isConfirmation(text)) {
-      const msg = await doSavePendingMeeting(chatId);
-      pushToHistory(chatId, text, msg);
+      const msg = await doSavePendingMeeting(chatId, state);
+      pushToHistory(state, text, msg);
       if (wantDebug) debugSteps.push({ name: "confirmação_salvar", reply: msg });
-      return returnReply(msg);
+      return persistAndReturn(returnReply(msg));
     }
     if (isRejection(text)) {
-      pendingSave.delete(chatId);
+      state.pendingSave = null;
     }
   }
 
   // ----- 1a. Confirmação para SALVAR a atualização (segundo "sim" da alteração, se houver fluxo em duas etapas)
-  const pendingUpConfirm = pendingUpdateConfirm.get(chatId);
+  const pendingUpConfirm = state.pendingUpdateConfirm;
   if (pendingUpConfirm) {
     if (isConfirmation(text)) {
-      pendingUpdate.set(chatId, pendingUpConfirm);
-      pendingUpdateConfirm.delete(chatId);
-      const msg = await doUpdateMeeting(chatId, text);
-      pushToHistory(chatId, text, msg);
+      state.pendingUpdate = pendingUpConfirm;
+      state.pendingUpdateConfirm = null;
+      const msg = await doUpdateMeeting(state, text);
+      pushToHistory(state, text, msg);
       if (wantDebug) debugSteps.push({ name: "confirmação_atualizar", reply: msg });
-      return returnReply(msg);
+      return persistAndReturn(returnReply(msg));
     }
     if (isRejection(text)) {
-      pendingUpdateConfirm.delete(chatId);
+      state.pendingUpdateConfirm = null;
     }
   }
 
   // ----- 1b. "sim" em alteração (bot já pediu "Confirma a alteração?") → atualiza no banco
-  const pendingUp = pendingUpdate.get(chatId);
+  const pendingUp = state.pendingUpdate;
   if (pendingUp) {
     if (isConfirmation(text)) {
-      const msg = await doUpdateMeeting(chatId, text);
-      pushToHistory(chatId, text, msg);
+      const msg = await doUpdateMeeting(state, text);
+      pushToHistory(state, text, msg);
       if (wantDebug) debugSteps.push({ name: "confirmação_atualizar", reply: msg });
-      return returnReply(msg);
+      return persistAndReturn(returnReply(msg));
     }
     if (isRejection(text)) {
-      pendingUpdate.delete(chatId);
+      state.pendingUpdate = null;
     }
   }
 
   // ----- 2. Confirmação de exclusão
-  const pendingDel = pendingDelete.get(chatId);
+  const pendingDel = state.pendingDelete;
   if (pendingDel) {
     if (isConfirmation(text)) {
       try {
         await deleteMeeting(pendingDel.meetingId);
-        pendingDelete.delete(chatId);
+        state.pendingDelete = null;
         const msg = `✅ Reunião "${pendingDel.assunto}" (${pendingDel.dataStr}) foi excluída.`;
-        pushToHistory(chatId, text, msg);
+        pushToHistory(state, text, msg);
         if (wantDebug) debugSteps.push({ name: "confirmação_excluir", reply: msg });
-        return returnReply(msg);
+        return persistAndReturn(returnReply(msg));
       } catch (err) {
         console.error("[telegram-bot] delete meeting error:", err);
-        pendingDelete.delete(chatId);
+        state.pendingDelete = null;
         const errMsg = "Não consegui excluir a reunião. Tente de novo.";
-        pushToHistory(chatId, text, errMsg);
+        pushToHistory(state, text, errMsg);
         if (wantDebug) debugSteps.push({ name: "confirmação_excluir", reply: errMsg });
-        return returnReply(errMsg);
+        return persistAndReturn(returnReply(errMsg));
       }
     }
     if (isRejection(text)) {
-      pendingDelete.delete(chatId);
+      state.pendingDelete = null;
     }
   }
 
   // ----- 3. Escolha pendente (Classificador retornou MULTIPLAS)
-  const choice = pendingChoice.get(chatId);
+  const choice = state.pendingChoice;
   if (choice) {
     const resolved = resolveChoiceToCategory(text, choice.options);
     if (resolved && isRoutableCategory(resolved)) {
-      pendingChoice.delete(chatId);
-      const ctx = await buildBotContext(chatId, text, history, resolved);
+      state.pendingChoice = null;
+      const ctx = await buildBotContext(chatId, text, state.history, resolved, state.userEmail ?? undefined);
       const result = await runBot(resolved, ctx);
-      applyBotResultState(chatId, result);
-      pushToHistory(chatId, text, result.reply);
+      applyBotResultState(state, result);
+      pushToHistory(state, text, result.reply);
       if (wantDebug) debugSteps.push({ name: resolved, reply: result.reply });
-      return returnReply(result.reply);
+      return persistAndReturn(returnReply(result.reply));
     }
     const askAgain = `${choice.reply}\n\nPor favor, escolha uma opção (ex.: 1 ou 2, ou diga "consultar" / "alterar").`;
-    pushToHistory(chatId, text, askAgain);
+    pushToHistory(state, text, askAgain);
     if (wantDebug) debugSteps.push({ name: "MULTIPLAS_escolha", reply: askAgain });
-    return returnReply(askAgain);
+    return persistAndReturn(returnReply(askAgain));
   }
 
   // ----- 4. Bot Classificador: classificar e rotear
   try {
-    const classification = await classify(text, history);
+    const classification = await classify(text, state.history);
 
     if (classification.category === "MULTIPLAS" && classification.options?.length && classification.reply) {
-      pendingChoice.set(chatId, { options: classification.options, reply: classification.reply });
-      pushToHistory(chatId, text, classification.reply);
+      state.pendingChoice = { options: classification.options, reply: classification.reply };
+      pushToHistory(state, text, classification.reply);
       if (wantDebug) debugSteps.push({ name: "classificador (MULTIPLAS)", reply: classification.reply });
-      return returnReply(classification.reply);
+      return persistAndReturn(returnReply(classification.reply));
     }
 
     if (classification.category === "RESPONDER_DIRETO" || classification.category === "NAO_ENTENDI") {
       const reply = classification.reply ?? "Não entendi. Pode reformular?";
-      pushToHistory(chatId, text, reply);
+      pushToHistory(state, text, reply);
       if (wantDebug) debugSteps.push({ name: `classificador (${classification.category})`, reply });
-      return returnReply(reply);
+      return persistAndReturn(returnReply(reply));
     }
 
     if (isRoutableCategory(classification.category)) {
-      const ctx = await buildBotContext(chatId, text, history, classification.category);
+      const ctx = await buildBotContext(chatId, text, state.history, classification.category, state.userEmail ?? undefined);
       const result = await runBot(classification.category, ctx);
-      applyBotResultState(chatId, result);
+      applyBotResultState(state, result);
 
       if (result.pendingSave) {
         const key = meetingKey(result.pendingSave.assunto, result.pendingSave.data);
-        if (wasAlreadySaved(chatId, key)) {
-          pushToHistory(chatId, text, result.reply);
+        if (wasAlreadySaved(state, key)) {
+          pushToHistory(state, text, result.reply);
           if (wantDebug) debugSteps.push({ name: classification.category, reply: result.reply });
-          return returnReply(result.reply);
+          return persistAndReturn(returnReply(result.reply));
         }
-        pendingSave.set(chatId, result.pendingSave);
+        state.pendingSave = result.pendingSave;
         const dataStr = new Date(result.pendingSave.data + "T12:00:00").toLocaleDateString("pt-BR", {
           day: "2-digit",
           month: "2-digit",
           year: "numeric",
         });
         const fullReply = `${result.reply}\n\n📋 Encontrei os dados de uma reunião: **${result.pendingSave.assunto}**, dia ${dataStr}, com ${result.pendingSave.items.length} item(ns). Quer que eu salve no banco? (sim/não)`;
-        pushToHistory(chatId, text, fullReply);
+        pushToHistory(state, text, fullReply);
         if (wantDebug) debugSteps.push({ name: classification.category, reply: fullReply });
-        return returnReply(fullReply);
+        return persistAndReturn(returnReply(fullReply));
       }
 
-      pushToHistory(chatId, text, result.reply);
+      pushToHistory(state, text, result.reply);
       if (wantDebug) debugSteps.push({ name: classification.category, reply: result.reply });
-      return returnReply(result.reply);
+      return persistAndReturn(returnReply(result.reply));
     }
 
     const fallback = classification.reply ?? "Não consegui processar. Tente novamente.";
-    pushToHistory(chatId, text, fallback);
+    pushToHistory(state, text, fallback);
     if (wantDebug) debugSteps.push({ name: `classificador (${classification.category})`, reply: fallback });
-    return returnReply(fallback);
+    return persistAndReturn(returnReply(fallback));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const stack = err instanceof Error ? err.stack : undefined;
@@ -418,7 +430,7 @@ export async function getReplyForChat(
         ? "Não foi possível usar o serviço de IA: permissão negada no projeto (Vertex AI / Google Cloud). Verifique no Google Cloud Console se a API Vertex AI está ativada e se as credenciais (OAuth) têm acesso ao projeto."
         : "Desculpe, tive um problema ao processar. Tente de novo em instantes.";
     if (wantDebug) debugSteps.push({ name: "erro", reply: errReply });
-    return returnReply(errReply);
+    return persistAndReturn(returnReply(errReply));
   }
 }
 
@@ -427,7 +439,8 @@ async function buildBotContext(
   chatId: number,
   userMessage: string,
   history: ChatMessage[],
-  category: Category
+  category: Category,
+  userEmail?: string
 ): Promise<{
   chatId: number;
   userMessage: string;
@@ -441,11 +454,11 @@ async function buildBotContext(
   let meetings: Meeting[];
 
   if (category === "INCLUSAO") {
-    const out = await buildRecentMeetingsContext(userMessage, history);
+    const out = await buildRecentMeetingsContext(userMessage, history, userEmail);
     block = out.block;
     meetings = out.meetings;
   } else {
-    const out = await buildConsultaMeetingsBlock();
+    const out = await buildConsultaMeetingsBlock(userEmail);
     block = out.block;
     meetings = out.meetings;
   }
@@ -477,13 +490,13 @@ async function buildBotContext(
 }
 
 function applyBotResultState(
-  chatId: number,
+  state: ChatState,
   result: { pendingUpdate?: { meetingId: string; assunto: string }; pendingUpdateConfirm?: { meetingId: string; assunto: string }; pendingDelete?: { meetingId: string; assunto: string; dataStr: string } }
 ): void {
   if (result.pendingUpdate) {
-    pendingUpdate.set(chatId, result.pendingUpdate);
-    pendingSave.delete(chatId);
+    state.pendingUpdate = result.pendingUpdate;
+    state.pendingSave = null;
   }
-  if (result.pendingUpdateConfirm) pendingUpdateConfirm.set(chatId, result.pendingUpdateConfirm);
-  if (result.pendingDelete) pendingDelete.set(chatId, result.pendingDelete);
+  if (result.pendingUpdateConfirm) state.pendingUpdateConfirm = result.pendingUpdateConfirm;
+  if (result.pendingDelete) state.pendingDelete = result.pendingDelete;
 }
