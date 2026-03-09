@@ -53,6 +53,17 @@ export default function HomePage() {
               </p>
               <span className="home__card-cta">Abrir →</span>
             </Link>
+
+            <Link href="/configuracoes" className="home__card">
+              <span className="home__card-icon" aria-hidden>
+                ⚙
+              </span>
+              <h2 className="home__card-title">Configurações</h2>
+              <p className="home__card-desc">
+                Vincule seu Telegram à sua conta (ID do perfil)
+              </p>
+              <span className="home__card-cta">Abrir →</span>
+            </Link>
           </nav>
 
           <footer className="home__footer">

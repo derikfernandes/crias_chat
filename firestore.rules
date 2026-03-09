@@ -17,5 +17,14 @@ service cloud.firestore {
     match /chatState/{chatId} {
       allow read, write: if true;
     }
+
+    // Vinculação Telegram User ID -> email (só o dono do email pode gravar; webhook precisa ler)
+    match /telegramLinks/{telegramUserId} {
+      allow read: if true;
+      allow create, update: if request.auth != null
+        && request.resource.data.email == request.auth.token.email;
+      allow delete: if request.auth != null
+        && resource.data.email == request.auth.token.email;
+    }
   }
 }
