@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getReplyForChat } from "@/lib/telegram-bot";
+import { getEmailByTelegramUserId } from "@/lib/telegram-links";
 
 const TELEGRAM_API = "https://api.telegram.org/bot";
 
@@ -7,7 +8,8 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const chatId = body?.message?.chat?.id;
-    const text = body?.message?.text;
+    const text = body?.message?.text ?? "";
+    const fromId = body?.message?.from?.id;
 
     if (chatId == null) {
       return NextResponse.json({ ok: false }, { status: 400 });
@@ -18,7 +20,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false }, { status: 500 });
     }
 
-    const replyText = await getReplyForChat(chatId, text ?? "");
+    const userEmail =
+      typeof fromId === "number"
+        ? await getEmailByTelegramUserId(fromId)
+        : null;
+
+    const askId = /^\s*(\/meuid|meu\s+id|qual\s+meu\s+id|id)\s*$/i.test(text.trim());
+    let replyText: string;
+    if (askId && typeof fromId === "number") {
+      replyText = `Seu ID no Telegram é: **${fromId}**. Use esse número em Configurações no site (logado) para vincular esta conta.`;
+    } else {
+      const result = await getReplyForChat(chatId, text, {
+        userEmail: userEmail ?? undefined,
+      });
+      replyText = typeof result === "string" ? result : result.reply;
+    }
+
     const sendUrl = `${TELEGRAM_API}${token}/sendMessage`;
     await fetch(sendUrl, {
       method: "POST",
