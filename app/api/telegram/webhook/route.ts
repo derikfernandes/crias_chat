@@ -25,9 +25,18 @@ export async function POST(request: NextRequest) {
         ? await getEmailByTelegramUserId(fromId)
         : null;
 
+    const isLinked = userEmail != null;
     const askId = /^\s*(\/meuid|meu\s+id|qual\s+meu\s+id|id)\s*$/i.test(text.trim());
+
     let replyText: string;
-    if (askId && typeof fromId === "number") {
+    if (!isLinked) {
+      if (askId && typeof fromId === "number") {
+        replyText = `Seu ID no Telegram é: **${fromId}**. Use esse número em Configurações no site (logado) para vincular esta conta.`;
+      } else {
+        replyText =
+          "Para usar o bot, vincule seu perfil do Telegram à sua conta. Acesse o site (faça login), vá em Configurações e informe seu ID do Telegram. Para saber seu ID, envie aqui: meu id";
+      }
+    } else if (askId && typeof fromId === "number") {
       replyText = `Seu ID no Telegram é: **${fromId}**. Use esse número em Configurações no site (logado) para vincular esta conta.`;
     } else {
       const result = await getReplyForChat(chatId, text, {
