@@ -1,25 +1,5 @@
-import Link from "next/link";
+import RootRedirect from "./RootRedirect";
 
-export default function Home() {
-  return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui" }}>
-      <h1>Crias Chat Bot</h1>
-      <p>Bot do Telegram. Use /api/telegram/setup para configurar o webhook.</p>
-      <p style={{ marginTop: "1rem" }}>
-        <Link href="/test-bot" style={{ color: "#4ecdc4" }}>
-          Testar o bot no localhost (sem Telegram) →
-        </Link>
-      </p>
-      <p style={{ marginTop: "0.5rem" }}>
-        <Link href="/gerenciamento" style={{ color: "#4ecdc4" }}>
-          Gerenciamento (ver dados do banco) →
-        </Link>
-      </p>
-      <p style={{ marginTop: "0.5rem" }}>
-        <Link href="/kanban" style={{ color: "#4ecdc4" }}>
-          Kanban (ações e atividades) →
-        </Link>
-      </p>
-    </main>
-  );
+export default function RootPage() {
+  return <RootRedirect />;
 }

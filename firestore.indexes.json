@@ -1,0 +1,21 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "meetings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userEmail", "order": "ASCENDING" },
+        { "fieldPath": "data", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "chatState",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userEmail", "order": "ASCENDING" },
+        { "fieldPath": "chatId", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

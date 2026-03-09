@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState, useRef, useEffect } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 
 type Message = {
   id: string;
@@ -20,9 +21,11 @@ type DebugEntry = {
 };
 
 export default function TestBotPage() {
+  const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(true);
   const [debugEntries, setDebugEntries] = useState<DebugEntry[]>([]);
   const [debugOpen, setDebugOpen] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
@@ -30,6 +33,30 @@ export default function TestBotPage() {
   useEffect(() => {
     listRef.current?.scrollTo(0, listRef.current.scrollHeight);
   }, [messages]);
+
+  useEffect(() => {
+    if (!user?.email?.trim()) {
+      setMessages([]);
+      setLoadingHistory(false);
+      return;
+    }
+    fetch("/api/telegram/test/history", {
+      headers: { "X-User-Email": user.email },
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        const history = Array.isArray(data?.history) ? data.history : [];
+        const loaded: Message[] = history.map((m: { role: string; text: string }, i: number) => ({
+          id: `hist-${i}`,
+          role: m.role === "model" ? "bot" : "user",
+          text: m.text ?? "",
+          time: "—",
+        }));
+        setMessages(loaded);
+      })
+      .catch(() => setMessages([]))
+      .finally(() => setLoadingHistory(false));
+  }, [user?.email]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -50,7 +77,11 @@ export default function TestBotPage() {
       const res = await fetch("/api/telegram/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, debug: true }),
+        body: JSON.stringify({
+          text,
+          debug: true,
+          userEmail: user?.email ?? undefined,
+        }),
       });
       const data = await res.json();
       const replyText = data?.reply ?? (data?.ok === false ? "Erro ao obter resposta." : "...");
@@ -190,14 +221,17 @@ export default function TestBotPage() {
         </div>
         <h1 style={styles.title}>Testar Bot (localhost)</h1>
         <p style={styles.subtitle}>
-          Simula conversas com o bot sem conectar ao Telegram. A primeira mensagem recebe &quot;oi&quot;, as seguintes &quot;bot ta bão&quot;.
+          Simula conversas com o bot sem conectar ao Telegram. O histórico é restaurado ao abrir a página.
         </p>
 
         <div ref={listRef} style={styles.messageList}>
-          {messages.length === 0 && (
+          {loadingHistory && (
+            <p style={styles.placeholder}>Carregando histórico...</p>
+          )}
+          {!loadingHistory && messages.length === 0 && (
             <p style={styles.placeholder}>Envie uma mensagem para testar o bot.</p>
           )}
-          {messages.map((msg) => (
+          {!loadingHistory && messages.map((msg) => (
             <div
               key={msg.id}
               style={{

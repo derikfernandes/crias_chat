@@ -1,37 +1,50 @@
+"use client";
+
 import Link from "next/link";
-import {
-  listMeetings,
-  listMeetingItems,
-  formatMeetingDateStr,
-} from "@/lib/meetings";
+import { useEffect, useState } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 import type { Meeting, MeetingItem } from "@/lib/firestore-types";
 import GerenciamentoList from "./GerenciamentoList";
 
-/** Sempre buscar dados no servidor; nunca usar cache do Next nem do Firestore. */
-export const dynamic = "force-dynamic";
+type MeetingWithItems = Meeting & { items: MeetingItem[] };
 
-async function getMeetingsWithItems(): Promise<
-  Array<Meeting & { items: MeetingItem[] }>
-> {
-  const meetings = await listMeetings();
-  const withItems = await Promise.all(
-    meetings.map(async (m) => {
-      const items = m.id ? await listMeetingItems(m.id) : [];
-      return { ...m, items };
+export default function GerenciamentoPage() {
+  const { user, loading: authLoading } = useAuth();
+  const [meetingsWithItems, setMeetingsWithItems] = useState<
+    MeetingWithItems[]
+  >([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user?.email?.trim()) {
+      setMeetingsWithItems([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    fetch("/api/meetings", {
+      headers: { "X-User-Email": user.email },
+      cache: "no-store",
     })
-  );
-  return withItems;
-}
-
-export default async function GerenciamentoPage() {
-  let meetingsWithItems: Array<Meeting & { items: MeetingItem[] }> = [];
-  let error: string | null = null;
-
-  try {
-    meetingsWithItems = await getMeetingsWithItems();
-  } catch (e) {
-    error = e instanceof Error ? e.message : "Erro ao carregar dados do banco.";
-  }
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.ok && Array.isArray(data.meetings)) {
+          setMeetingsWithItems(data.meetings);
+        } else {
+          setMeetingsWithItems([]);
+        }
+        setError(data?.ok ? null : (data?.error ?? "Erro ao carregar dados."));
+      })
+      .catch(() => {
+        setMeetingsWithItems([]);
+        setError("Erro ao carregar dados do banco.");
+      })
+      .finally(() => setLoading(false));
+  }, [user?.email, authLoading]);
 
   return (
     <main style={styles.main}>
@@ -47,22 +60,29 @@ export default async function GerenciamentoPage() {
           </Link>
         </div>
 
-        {error && (
+        {authLoading || loading ? (
+          <div style={styles.empty}>
+            <p>Carregando reuniões…</p>
+          </div>
+        ) : !user ? (
+          <div style={styles.empty}>
+            <p>Faça login para ver suas reuniões.</p>
+            <p style={styles.emptyHint}>
+              Use o mesmo e-mail vinculado às reuniões (ex.: no bot ou na migração).
+            </p>
+          </div>
+        ) : error ? (
           <div style={styles.error}>
             <strong>Erro:</strong> {error}
           </div>
-        )}
-
-        {!error && meetingsWithItems.length === 0 && (
+        ) : meetingsWithItems.length === 0 ? (
           <div style={styles.empty}>
             <p>Nenhuma reunião cadastrada no banco de dados.</p>
             <p style={styles.emptyHint}>
               Use o bot do Telegram para incluir reuniões; elas aparecerão aqui.
             </p>
           </div>
-        )}
-
-        {!error && meetingsWithItems.length > 0 && (
+        ) : (
           <GerenciamentoList meetings={meetingsWithItems} />
         )}
       </div>

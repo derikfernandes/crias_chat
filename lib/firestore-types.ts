@@ -14,6 +14,8 @@ export interface MeetingItem {
   id?: string;
   content: string;
   order: number;
+  /** E-mail do usuário dono do registro (vinculação ao cadastro logado) */
+  userEmail?: string;
   createdAt?: Timestamp | Date;
   /** Tipo do item: anotação normal da reunião ou ação vinculada. */
   type?: "note" | "action";
@@ -33,6 +35,8 @@ export interface Meeting {
   data: Timestamp | Date | string;
   /** Texto completo da reunião (conteúdo bruto/compilado da conversa) */
   textoCompleto?: string;
+  /** E-mail do usuário dono do registro (vinculação ao cadastro logado) */
+  userEmail?: string;
   createdAt?: Timestamp | Date;
   updatedAt?: Timestamp | Date;
 }

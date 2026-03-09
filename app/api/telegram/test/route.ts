@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getReplyForChat } from "@/lib/telegram-bot";
-
-// ChatId fixo para testes locais (não envia nada ao Telegram)
-const TEST_CHAT_ID = 999999;
+import { getReplyForChat, TEST_CHAT_ID } from "@/lib/telegram-bot";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
     const text = body?.text ?? "";
     const debug = body?.debug === true;
+    const userEmail = typeof body?.userEmail === "string" ? body.userEmail.trim() || undefined : undefined;
 
-    const result = await getReplyForChat(TEST_CHAT_ID, text, { returnDebug: debug });
+    const result = await getReplyForChat(TEST_CHAT_ID, text, { returnDebug: debug, userEmail });
 
     if (typeof result === "string") {
       return NextResponse.json({ ok: true, reply: result });
