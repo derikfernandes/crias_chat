@@ -27,6 +27,15 @@ export interface MeetingItem {
   actionDueDate?: Timestamp | Date | string;
 }
 
+/** Comentário vinculado a um item de reunião (ação). */
+export interface MeetingItemComment {
+  id?: string;
+  content: string;
+  createdAt?: Timestamp | Date;
+  /** E-mail do usuário que fez o comentário (se houver login). */
+  userEmail?: string;
+}
+
 export interface Meeting {
   id?: string;
   /** Assunto/categoria da reunião (ex: "Sprint Planning", "1:1") */
@@ -46,3 +55,9 @@ export type MeetingCreate = Omit<Meeting, "id" | "createdAt" | "updatedAt">;
 
 /** Dados para criar um item (sem id e createdAt). */
 export type MeetingItemCreate = Omit<MeetingItem, "id" | "createdAt">;
+
+/** Dados para criar um comentário de item (sem id e createdAt). */
+export type MeetingItemCommentCreate = Omit<
+  MeetingItemComment,
+  "id" | "createdAt"
+>;

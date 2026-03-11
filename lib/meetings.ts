@@ -21,10 +21,18 @@ import {
   type CollectionReference,
 } from "firebase/firestore";
 import { getDb } from "./firebase";
-import type { Meeting, MeetingItem, MeetingCreate, MeetingItemCreate } from "./firestore-types";
+import type {
+  Meeting,
+  MeetingItem,
+  MeetingCreate,
+  MeetingItemCreate,
+  MeetingItemComment,
+  MeetingItemCommentCreate,
+} from "./firestore-types";
 
 const MEETINGS = "meetings";
 const ITEMS = "items";
+const COMMENTS = "comments";
 
 /** Usado apenas na migração de dados existentes (derikluizfernandes@gmail.com). Novas reuniões exigem o e-mail do login. */
 export const MIGRATION_USER_EMAIL = "derikluizfernandes@gmail.com";
@@ -43,6 +51,17 @@ function meetingRef(id: string): DocumentReference<Meeting> {
 
 function itemsCol(meetingId: string) {
   return collection(getDb(), MEETINGS, meetingId, ITEMS);
+}
+
+function itemCommentsCol(meetingId: string, itemId: string) {
+  return collection(
+    getDb(),
+    MEETINGS,
+    meetingId,
+    ITEMS,
+    itemId,
+    COMMENTS
+  ) as CollectionReference<MeetingItemComment>;
 }
 
 /**
@@ -261,5 +280,73 @@ export async function deleteMeetingItem(
   itemId: string
 ): Promise<void> {
   const ref = doc(getDb(), MEETINGS, meetingId, ITEMS, itemId);
+  await deleteDoc(ref);
+}
+
+/** Adiciona um comentário a um item de reunião (ação). */
+export async function addMeetingItemComment(
+  meetingId: string,
+  itemId: string,
+  data: MeetingItemCommentCreate
+): Promise<string> {
+  const col = itemCommentsCol(meetingId, itemId);
+  const payload = {
+    ...data,
+    createdAt: serverTimestamp(),
+  };
+  const ref = await addDoc(col, payload);
+  return ref.id;
+}
+
+/** Lista comentários de um item de reunião (ordenados por createdAt). */
+export async function listMeetingItemComments(
+  meetingId: string,
+  itemId: string
+): Promise<MeetingItemComment[]> {
+  const col = itemCommentsCol(meetingId, itemId);
+  const q = query(col, orderBy("createdAt", "asc"));
+  const snap = await getDocsFromServer(q);
+  return snap.docs.map(
+    (d) => ({ id: d.id, ...d.data() } as MeetingItemComment)
+  );
+}
+
+/** Atualiza um comentário de item de reunião (apenas conteúdo por enquanto). */
+export async function updateMeetingItemComment(
+  meetingId: string,
+  itemId: string,
+  commentId: string,
+  data: Partial<Pick<MeetingItemComment, "content">>
+): Promise<void> {
+  const ref = doc(
+    getDb(),
+    MEETINGS,
+    meetingId,
+    ITEMS,
+    itemId,
+    COMMENTS,
+    commentId
+  );
+  const payload: Record<string, unknown> = {};
+  if (data.content !== undefined) payload.content = data.content;
+  if (Object.keys(payload).length === 0) return;
+  await updateDoc(ref, payload);
+}
+
+/** Remove um comentário de item de reunião. */
+export async function deleteMeetingItemComment(
+  meetingId: string,
+  itemId: string,
+  commentId: string
+): Promise<void> {
+  const ref = doc(
+    getDb(),
+    MEETINGS,
+    meetingId,
+    ITEMS,
+    itemId,
+    COMMENTS,
+    commentId
+  );
   await deleteDoc(ref);
 }
