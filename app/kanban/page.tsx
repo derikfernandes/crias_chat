@@ -35,6 +35,7 @@ export default function KanbanPage() {
   const [actions, setActions] = useState<ActionWithMeeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -68,6 +69,23 @@ export default function KanbanPage() {
       .finally(() => setLoading(false));
   }, [user?.email, authLoading]);
 
+  const subjects = Array.from(
+    new Set(actions.map((a) => a.meetingAssunto))
+  ).sort((a, b) => a.localeCompare(b, "pt-BR"));
+
+  const toggleSubject = (assunto: string) => {
+    setSelectedSubjects((prev) =>
+      prev.includes(assunto)
+        ? prev.filter((s) => s !== assunto)
+        : [...prev, assunto]
+    );
+  };
+
+  const filteredActions =
+    selectedSubjects.length === 0
+      ? actions
+      : actions.filter((a) => selectedSubjects.includes(a.meetingAssunto));
+
   return (
     <main style={styles.main}>
       <div style={styles.container}>
@@ -80,6 +98,39 @@ export default function KanbanPage() {
             ← Voltar ao início
           </Link>
         </div>
+
+        {user && !authLoading && !loading && actions.length > 0 && (
+          <div style={styles.filtersContainer}>
+            <span style={styles.filtersLabel}>Filtrar por assunto:</span>
+            <div style={styles.filtersChips}>
+              {subjects.map((assunto) => {
+                const active = selectedSubjects.includes(assunto);
+                return (
+                  <button
+                    key={assunto}
+                    type="button"
+                    onClick={() => toggleSubject(assunto)}
+                    style={{
+                      ...styles.filterChip,
+                      ...(active ? styles.filterChipActive : null),
+                    }}
+                  >
+                    {assunto}
+                  </button>
+                );
+              })}
+              {subjects.length > 0 && selectedSubjects.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedSubjects([])}
+                  style={styles.clearFilters}
+                >
+                  Limpar filtros
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {authLoading || loading ? (
           <div style={styles.empty}>
@@ -104,7 +155,10 @@ export default function KanbanPage() {
             </p>
           </div>
         ) : (
-          <KanbanBoard actions={actions} />
+          <KanbanBoard
+            actions={filteredActions}
+            userEmail={user?.email ?? undefined}
+          />
         )}
       </div>
     </main>
@@ -124,7 +178,7 @@ const styles: Record<string, React.CSSProperties> = {
     margin: "0 auto",
   },
   header: {
-    marginBottom: "2rem",
+    marginBottom: "1.25rem",
   },
   title: {
     margin: "0 0 0.5rem",
@@ -144,6 +198,44 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "0.9rem",
     textDecoration: "none",
     marginTop: "0.5rem",
+  },
+  filtersContainer: {
+    marginBottom: "1.5rem",
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.5rem",
+  },
+  filtersLabel: {
+    fontSize: "0.85rem",
+    color: "#aaa",
+  },
+  filtersChips: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "0.5rem",
+  },
+  filterChip: {
+    padding: "0.3rem 0.7rem",
+    borderRadius: "999px",
+    border: "1px solid rgba(255,255,255,0.25)",
+    background: "rgba(255,255,255,0.06)",
+    color: "#ddd",
+    fontSize: "0.8rem",
+    cursor: "pointer",
+  },
+  filterChipActive: {
+    border: "1px solid rgba(78, 205, 196, 0.8)",
+    background: "rgba(78, 205, 196, 0.2)",
+    color: "#4ecdc4",
+  },
+  clearFilters: {
+    padding: "0.3rem 0.7rem",
+    borderRadius: "999px",
+    border: "1px solid rgba(255,255,255,0.2)",
+    background: "transparent",
+    color: "#aaa",
+    fontSize: "0.75rem",
+    cursor: "pointer",
   },
   error: {
     padding: "1rem 1.25rem",
