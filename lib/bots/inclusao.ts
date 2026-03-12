@@ -19,7 +19,7 @@ function normalizeExtractedDate(dateStr: string): string {
 }
 
 export async function runInclusaoBot(ctx: BotContext): Promise<BotResult> {
-  const systemPrompt = loadPrompt(PROMPT_NAMES.INCLUSAO);
+  const systemPrompt = await loadPrompt(PROMPT_NAMES.INCLUSAO);
   const fullPrompt = `${systemPrompt}\n\n[REUNIÕES NO BANCO]\n${ctx.meetingsBlock}`;
   const reply = await generateContent({
     userMessage: ctx.userMessage,

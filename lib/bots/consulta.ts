@@ -7,7 +7,7 @@ import { loadPrompt, PROMPT_NAMES } from "@/lib/prompts/loader";
 import type { BotContext, BotResult } from "@/lib/router/types";
 
 export async function runConsultaBot(ctx: BotContext): Promise<BotResult> {
-  const systemPrompt = loadPrompt(PROMPT_NAMES.CONSULTA);
+  const systemPrompt = await loadPrompt(PROMPT_NAMES.CONSULTA);
   const fullPrompt = `${systemPrompt}\n\n[REUNIÕES NO BANCO]\n${ctx.meetingsBlock}`;
   const reply = await generateContent({
     userMessage: ctx.userMessage,

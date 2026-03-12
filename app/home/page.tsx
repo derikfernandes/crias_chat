@@ -64,6 +64,17 @@ export default function HomePage() {
               </p>
               <span className="home__card-cta">Abrir →</span>
             </Link>
+
+            <Link href="/admin" className="home__card">
+              <span className="home__card-icon" aria-hidden>
+                ◈
+              </span>
+              <h2 className="home__card-title">Admin · Prompts</h2>
+              <p className="home__card-desc">
+                Editar os textos dos bots e do classificador salvos no Firestore
+              </p>
+              <span className="home__card-cta">Abrir →</span>
+            </Link>
           </nav>
 
           <footer className="home__footer">
