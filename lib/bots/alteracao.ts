@@ -7,7 +7,7 @@ import { loadPrompt, PROMPT_NAMES } from "@/lib/prompts/loader";
 import type { BotContext, BotResult } from "@/lib/router/types";
 
 export async function runAlteracaoBot(ctx: BotContext): Promise<BotResult> {
-  const systemPrompt = loadPrompt(PROMPT_NAMES.ALTERACAO);
+  const systemPrompt = await loadPrompt(PROMPT_NAMES.ALTERACAO);
   const instruction = ctx.forcedInstruction ? `${ctx.forcedInstruction}\n\n` : "";
   const fullPrompt = `${instruction}${systemPrompt}\n\n[REUNIÕES NO BANCO]\n${ctx.meetingsBlock}`;
   const reply = await generateContent({

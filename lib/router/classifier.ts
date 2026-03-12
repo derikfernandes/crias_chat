@@ -42,7 +42,7 @@ export async function classify(
   userMessage: string,
   history: ChatMessage[]
 ): Promise<ClassifierResponse> {
-  const systemPrompt = loadPrompt(PROMPT_NAMES.CLASSIFICADOR);
+  const systemPrompt = await loadPrompt(PROMPT_NAMES.CLASSIFICADOR);
   const recent = history.slice(-10);
   const raw = await generateContent({
     userMessage: userMessage.trim() || ".",
