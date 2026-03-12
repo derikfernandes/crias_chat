@@ -56,6 +56,24 @@ function formatDueDate(value: ActionWithContext["actionDueDate"]): string | null
   return null;
 }
 
+function toDateInputValue(value: ActionWithContext["actionDueDate"]): string {
+  if (value == null || value === "") return "";
+  let d: Date | null = null;
+  if (value instanceof Date) {
+    d = value;
+  } else if (typeof value === "string") {
+    const parsed = new Date(value);
+    d = Number.isNaN(parsed.getTime()) ? null : parsed;
+  } else if (typeof (value as { toDate?: () => Date }).toDate === "function") {
+    d = (value as { toDate: () => Date }).toDate();
+  }
+  if (!d) return "";
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 const STATUS_LABELS: Record<string, string> = {
   open: "A fazer",
   done: "Concluído",
@@ -81,6 +99,14 @@ export default function ActionDetailsModal({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [dueDateInput, setDueDateInput] = useState<string>(
+    toDateInputValue(action.actionDueDate)
+  );
+  const [updatingDueDate, setUpdatingDueDate] = useState(false);
+  const [ownersInput, setOwnersInput] = useState<string>(
+    (action.actionOwners ?? []).join(", ")
+  );
+  const [updatingOwners, setUpdatingOwners] = useState(false);
 
   const meetingId = action.meetingId;
   const itemId = action.id!;
@@ -205,6 +231,59 @@ export default function ActionDetailsModal({
     }
   };
 
+  const handleUpdateDueDate = async () => {
+    if (updatingDueDate) return;
+    setUpdatingDueDate(true);
+    try {
+      const body: { actionDueDate: string | null } = {
+        actionDueDate: dueDateInput.trim() === "" ? null : dueDateInput.trim(),
+      };
+      const res = await fetch(`/api/meetings/${meetingId}/items/${itemId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setError(data.error ?? "Erro ao atualizar prazo");
+        return;
+      }
+      setError(null);
+    } catch {
+      setError("Erro ao atualizar prazo");
+    } finally {
+      setUpdatingDueDate(false);
+    }
+  };
+
+  const handleUpdateOwners = async () => {
+    if (updatingOwners) return;
+    setUpdatingOwners(true);
+    try {
+      const body = {
+        actionOwners: ownersInput
+          .split(",")
+          .map((v) => v.trim())
+          .filter((v) => v.length > 0),
+      };
+      const res = await fetch(`/api/meetings/${meetingId}/items/${itemId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setError(data.error ?? "Erro ao atualizar responsáveis");
+        return;
+      }
+      setError(null);
+    } catch {
+      setError("Erro ao atualizar responsáveis");
+    } finally {
+      setUpdatingOwners(false);
+    }
+  };
+
   const dueStr = formatDueDate(action.actionDueDate);
   const statusLabel =
     STATUS_LABELS[action.actionStatus ?? "open"] ?? "A fazer";
@@ -237,9 +316,46 @@ export default function ActionDetailsModal({
           <div style={styles.meta}>
             <span style={styles.meetingLabel}>{action.meetingAssunto}</span>
             <span style={styles.status}>{statusLabel}</span>
-            {dueStr && (
-              <span style={styles.due}>Prazo: {dueStr}</span>
-            )}
+            {dueStr && <span style={styles.due}>Prazo: {dueStr}</span>}
+          </div>
+          <div style={styles.dueEditor}>
+            <label style={styles.dueLabel}>
+              Prazo de execução
+              <input
+                type="date"
+                value={dueDateInput}
+                onChange={(e) => setDueDateInput(e.target.value)}
+                style={styles.dueInput}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={handleUpdateDueDate}
+              disabled={updatingDueDate}
+              style={styles.dueButton}
+            >
+              {updatingDueDate ? "Atualizando…" : "Salvar prazo"}
+            </button>
+          </div>
+          <div style={styles.ownersEditor}>
+            <label style={styles.ownersLabel}>
+              Responsáveis pela ação
+              <input
+                type="text"
+                value={ownersInput}
+                onChange={(e) => setOwnersInput(e.target.value)}
+                placeholder="Ex.: Ana, João, Patrícia"
+                style={styles.ownersInput}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={handleUpdateOwners}
+              disabled={updatingOwners}
+              style={styles.ownersButton}
+            >
+              {updatingOwners ? "Atualizando…" : "Salvar responsáveis"}
+            </button>
           </div>
         </div>
 
@@ -406,6 +522,69 @@ const styles: Record<string, React.CSSProperties> = {
   },
   due: {
     color: "#aaa",
+  },
+  dueEditor: {
+    marginTop: "0.75rem",
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "0.5rem",
+    alignItems: "center",
+    fontSize: "0.85rem",
+    color: "#ccc",
+  },
+  dueLabel: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.25rem",
+  },
+  dueInput: {
+    padding: "0.3rem 0.5rem",
+    borderRadius: "8px",
+    border: "1px solid rgba(255,255,255,0.3)",
+    background: "rgba(0,0,0,0.3)",
+    color: "#eee",
+    fontSize: "0.85rem",
+  },
+  dueButton: {
+    padding: "0.4rem 0.7rem",
+    borderRadius: "8px",
+    border: "1px solid rgba(78, 205, 196, 0.6)",
+    background: "rgba(78, 205, 196, 0.2)",
+    color: "#4ecdc4",
+    fontSize: "0.85rem",
+    cursor: "pointer",
+  },
+  ownersEditor: {
+    marginTop: "0.75rem",
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "0.5rem",
+    alignItems: "center",
+    fontSize: "0.85rem",
+    color: "#ccc",
+  },
+  ownersLabel: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.25rem",
+    flex: "1 1 220px",
+  },
+  ownersInput: {
+    padding: "0.3rem 0.5rem",
+    borderRadius: "8px",
+    border: "1px solid rgba(255,255,255,0.3)",
+    background: "rgba(0,0,0,0.3)",
+    color: "#eee",
+    fontSize: "0.85rem",
+  },
+  ownersButton: {
+    padding: "0.4rem 0.7rem",
+    borderRadius: "8px",
+    border: "1px solid rgba(255,255,255,0.3)",
+    background: "transparent",
+    color: "#ddd",
+    fontSize: "0.85rem",
+    cursor: "pointer",
   },
   section: {
     padding: "1.25rem 1.5rem",

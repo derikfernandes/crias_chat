@@ -30,6 +30,18 @@ export async function PATCH(
         : undefined;
     const actionNote =
       body.actionNote !== undefined ? String(body.actionNote) : undefined;
+    const rawOwners = body.actionOwners;
+    let actionOwners: string[] | undefined = undefined;
+    if (Array.isArray(rawOwners)) {
+      actionOwners = rawOwners
+        .map((v) => String(v).trim())
+        .filter((v) => v.length > 0);
+    } else if (typeof rawOwners === "string") {
+      actionOwners = rawOwners
+        .split(",")
+        .map((v) => v.trim())
+        .filter((v) => v.length > 0);
+    }
     const actionDueDateRaw = body.actionDueDate;
     const actionDueDate =
       actionDueDateRaw === undefined
@@ -44,13 +56,14 @@ export async function PATCH(
       type === undefined &&
       actionStatus === undefined &&
       actionNote === undefined &&
+      actionOwners === undefined &&
       actionDueDate === undefined
     ) {
       return NextResponse.json(
         {
           ok: false,
           error:
-            "Envie pelo menos um campo para atualizar (content, order, type, actionStatus, actionNote ou actionDueDate)",
+            "Envie pelo menos um campo para atualizar (content, order, type, actionStatus, actionNote, actionOwners ou actionDueDate)",
         },
         { status: 400 }
       );
@@ -61,6 +74,7 @@ export async function PATCH(
       type,
       actionStatus,
       actionNote,
+      actionOwners,
       actionDueDate,
     });
     return NextResponse.json({ ok: true });

@@ -253,7 +253,7 @@ export async function updateMeetingItem(
   data: Partial<
     Pick<
       MeetingItem,
-      "content" | "order" | "type" | "actionStatus" | "actionNote"
+      "content" | "order" | "type" | "actionStatus" | "actionNote" | "actionOwners"
     >
   > & {
     actionDueDate?: MeetingItem["actionDueDate"] | null;
@@ -266,6 +266,7 @@ export async function updateMeetingItem(
   if (data.type !== undefined) payload.type = data.type;
   if (data.actionStatus !== undefined) payload.actionStatus = data.actionStatus;
   if (data.actionNote !== undefined) payload.actionNote = data.actionNote;
+  if (data.actionOwners !== undefined) payload.actionOwners = data.actionOwners;
   if (data.actionDueDate !== undefined) {
     payload.actionDueDate =
       data.actionDueDate === null ? deleteField() : data.actionDueDate;

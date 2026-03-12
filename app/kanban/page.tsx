@@ -36,6 +36,7 @@ export default function KanbanPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
+  const [selectedOwners, setSelectedOwners] = useState<string[]>([]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -73,6 +74,17 @@ export default function KanbanPage() {
     new Set(actions.map((a) => a.meetingAssunto))
   ).sort((a, b) => a.localeCompare(b, "pt-BR"));
 
+  const owners = Array.from(
+    new Set(
+      actions
+        .flatMap((a) =>
+          Array.isArray(a.actionOwners) ? a.actionOwners : []
+        )
+        .map((o) => o.trim())
+        .filter((o) => o.length > 0)
+    )
+  ).sort((a, b) => a.localeCompare(b, "pt-BR"));
+
   const toggleSubject = (assunto: string) => {
     setSelectedSubjects((prev) =>
       prev.includes(assunto)
@@ -81,10 +93,25 @@ export default function KanbanPage() {
     );
   };
 
-  const filteredActions =
-    selectedSubjects.length === 0
-      ? actions
-      : actions.filter((a) => selectedSubjects.includes(a.meetingAssunto));
+  const toggleOwner = (owner: string) => {
+    setSelectedOwners((prev) =>
+      prev.includes(owner)
+        ? prev.filter((s) => s !== owner)
+        : [...prev, owner]
+    );
+  };
+
+  let filteredActions = actions;
+  if (selectedSubjects.length > 0) {
+    filteredActions = filteredActions.filter((a) =>
+      selectedSubjects.includes(a.meetingAssunto)
+    );
+  }
+  if (selectedOwners.length > 0) {
+    filteredActions = filteredActions.filter((a) =>
+      (a.actionOwners ?? []).some((o) => selectedOwners.includes(o))
+    );
+  }
 
   return (
     <main style={styles.main}>
@@ -129,6 +156,41 @@ export default function KanbanPage() {
                 </button>
               )}
             </div>
+
+            {owners.length > 0 && (
+              <>
+                <span style={styles.filtersLabel}>
+                  Filtrar por responsáveis:
+                </span>
+                <div style={styles.filtersChips}>
+                  {owners.map((owner) => {
+                    const active = selectedOwners.includes(owner);
+                    return (
+                      <button
+                        key={owner}
+                        type="button"
+                        onClick={() => toggleOwner(owner)}
+                        style={{
+                          ...styles.filterChip,
+                          ...(active ? styles.filterChipActive : null),
+                        }}
+                      >
+                        {owner}
+                      </button>
+                    );
+                  })}
+                  {selectedOwners.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedOwners([])}
+                      style={styles.clearFilters}
+                    >
+                      Limpar filtros de responsáveis
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         )}
 
