@@ -25,6 +25,8 @@ export interface MeetingItem {
   actionNote?: string;
   /** Prazo opcional da ação. */
   actionDueDate?: Timestamp | Date | string;
+  /** Pessoas responsáveis por executar a ação. */
+  actionOwners?: string[];
 }
 
 /** Comentário vinculado a um item de reunião (ação). */

@@ -63,6 +63,12 @@ function KanbanCard({
       <div style={styles.cardMeta}>
         <span style={styles.cardMeeting}>{action.meetingAssunto}</span>
         {dueStr && <span style={styles.cardDue}>Prazo: {dueStr}</span>}
+        {Array.isArray(action.actionOwners) &&
+          action.actionOwners.length > 0 && (
+            <span style={styles.cardOwners}>
+              Resp.: {action.actionOwners.join(", ")}
+            </span>
+          )}
       </div>
       <div style={styles.cardActions}>
         <button
@@ -281,6 +287,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
   cardDue: {
     color: "#aaa",
+  },
+  cardOwners: {
+    color: "#ccc",
   },
   cardActions: {
     display: "flex",
