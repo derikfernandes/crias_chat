@@ -3,7 +3,44 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Reuniões: assunto, data, textoCompleto, userEmail (vinculação ao cadastro)
+    // ---- Funções de admin ----
+    // Super admin fixo, sempre com acesso total ao painel de admin.
+    function isSuperAdmin() {
+      return request.auth != null
+        && request.auth.token.email == 'derikluizfernandes@gmail.com';
+    }
+
+    // Admins adicionais são mantidos em config/admins.emails (array de e-mails).
+    function isAdmin() {
+      return isSuperAdmin()
+        || (request.auth != null
+          && exists(/databases/$(database)/documents/config/admins)
+          && request.auth.token.email in
+             get(/databases/$(database)/documents/config/admins).data.emails);
+    }
+
+    // ---- Config: lista de admins ----
+    match /config/admins {
+      // Qualquer usuário autenticado pode ler quem são os admins.
+      allow read: if request.auth != null;
+      // Apenas o super admin pode criar o documento pela primeira vez.
+      allow create: if isSuperAdmin();
+      // Atualização permitida para super admin ou e-mails já presentes na lista.
+      allow update: if isSuperAdmin()
+        || (request.auth != null
+          && request.auth.token.email in resource.data.emails);
+      // Documento não pode ser apagado.
+      allow delete: if false;
+    }
+
+    // ---- Prompts dos bots ----
+    // Leitura livre (bots e painel web); escrita apenas por admins.
+    match /prompts/{promptId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ---- Reuniões: assunto, data, textoCompleto, userEmail (vinculação ao cadastro)
     match /meetings/{meetingId} {
       allow read, write: if true;
       // Com Firebase Auth: allow read, write: if request.auth != null && resource.data.userEmail == request.auth.token.email;
@@ -18,12 +55,12 @@ service cloud.firestore {
       }
     }
 
-    // Estado do chat (Telegram): userEmail (vinculação ao cadastro)
+    // ---- Estado do chat (Telegram): userEmail (vinculação ao cadastro)
     match /chatState/{chatId} {
       allow read, write: if true;
     }
 
-    // Vinculação Telegram User ID -> email (só o dono do email pode gravar; webhook precisa ler)
+    // ---- Vinculação Telegram User ID -> email (só o dono do email pode gravar; webhook precisa ler)
     match /telegramLinks/{telegramUserId} {
       allow read: if true;
       allow create, update: if request.auth != null
@@ -33,3 +70,4 @@ service cloud.firestore {
     }
   }
 }
+

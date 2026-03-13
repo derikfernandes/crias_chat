@@ -59,14 +59,27 @@ function formatDueDate(value: ActionWithContext["actionDueDate"]): string | null
 function toDateInputValue(value: ActionWithContext["actionDueDate"]): string {
   if (value == null || value === "") return "";
   let d: Date | null = null;
+
   if (value instanceof Date) {
     d = value;
   } else if (typeof value === "string") {
-    const parsed = new Date(value);
-    d = Number.isNaN(parsed.getTime()) ? null : parsed;
+    const str = value.trim();
+    // Datas só com dia (YYYY-MM-DD) tratadas como data local
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+      const [y, m, day] = str.split("-").map(Number);
+      if (!y || !m || !day) {
+        d = null;
+      } else {
+        d = new Date(y, m - 1, day);
+      }
+    } else {
+      const parsed = new Date(str);
+      d = Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
   } else if (typeof (value as { toDate?: () => Date }).toDate === "function") {
     d = (value as { toDate: () => Date }).toDate();
   }
+
   if (!d) return "";
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, "0");
@@ -84,12 +97,14 @@ type Props = {
   action: ActionWithContext;
   onClose: () => void;
   userEmail?: string;
+  onUpdateAction?: (patch: Partial<ActionWithContext>) => void;
 };
 
 export default function ActionDetailsModal({
   action,
   onClose,
   userEmail,
+  onUpdateAction,
 }: Props) {
   const [comments, setComments] = useState<MeetingItemComment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -249,6 +264,11 @@ export default function ActionDetailsModal({
         return;
       }
       setError(null);
+      if (body.actionDueDate !== null) {
+        onUpdateAction?.({ actionDueDate: body.actionDueDate });
+      } else {
+        onUpdateAction?.({ actionDueDate: undefined });
+      }
     } catch {
       setError("Erro ao atualizar prazo");
     } finally {
@@ -277,6 +297,7 @@ export default function ActionDetailsModal({
         return;
       }
       setError(null);
+      onUpdateAction?.({ actionOwners: body.actionOwners });
     } catch {
       setError("Erro ao atualizar responsáveis");
     } finally {
@@ -284,7 +305,23 @@ export default function ActionDetailsModal({
     }
   };
 
-  const dueStr = formatDueDate(action.actionDueDate);
+  const dueStr =
+    dueDateInput.trim() !== ""
+      ? (() => {
+          const [y, m, d] = dueDateInput.split("-");
+          if (!y || !m || !d) return null;
+          const local = new Date(
+            Number(y),
+            Number(m) - 1,
+            Number(d)
+          );
+          return local.toLocaleDateString("pt-BR", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+          });
+        })()
+      : formatDueDate(action.actionDueDate);
   const statusLabel =
     STATUS_LABELS[action.actionStatus ?? "open"] ?? "A fazer";
 

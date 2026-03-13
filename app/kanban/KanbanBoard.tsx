@@ -17,32 +17,38 @@ const COLUMNS: { id: Status; title: string }[] = [
   { id: "cancelled", title: "Cancelado" },
 ];
 
-function formatDueDate(value: MeetingItem["actionDueDate"]): string | null {
-  if (value == null || value === "") return null;
-  if (value instanceof Date) {
-    return value.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
-  }
-  if (typeof value === "string") {
-    const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
-  }
-  if (typeof (value as { toDate?: () => Date }).toDate === "function") {
-    return (value as { toDate: () => Date }).toDate().toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
-  }
-  return null;
-}
-
-function getDueDate(value: MeetingItem["actionDueDate"]): Date | null {
+function parseDueDate(value: MeetingItem["actionDueDate"]): Date | null {
   if (value == null || value === "") return null;
   if (value instanceof Date) return value;
   if (typeof value === "string") {
-    const d = new Date(value);
+    const str = value.trim();
+    // Datas só com dia (YYYY-MM-DD) tratadas como data local
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+      const [y, m, d] = str.split("-").map((v) => Number(v));
+      if (!y || !m || !d) return null;
+      return new Date(y, m - 1, d);
+    }
+    const d = new Date(str);
     return Number.isNaN(d.getTime()) ? null : d;
   }
   if (typeof (value as { toDate?: () => Date }).toDate === "function") {
     return (value as { toDate: () => Date }).toDate();
   }
   return null;
+}
+
+function formatDueDate(value: MeetingItem["actionDueDate"]): string | null {
+  const d = parseDueDate(value);
+  if (!d) return null;
+  return d.toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
+function getDueDate(value: MeetingItem["actionDueDate"]): Date | null {
+  return parseDueDate(value);
 }
 
 function KanbanCard({
@@ -109,6 +115,18 @@ export default function KanbanBoard({
   useEffect(() => {
     setLocalActions(actions);
   }, [actions]);
+
+  const handleActionUpdate = useCallback(
+    (patch: Partial<ActionWithContext>) => {
+      setLocalActions((prev) =>
+        prev.map((a) =>
+          selectedAction && a.id === selectedAction.id ? { ...a, ...patch } : a
+        )
+      );
+      setSelectedAction((prev) => (prev ? { ...prev, ...patch } : prev));
+    },
+    [selectedAction]
+  );
 
   const moveAction = useCallback(
     async (meetingId: string, itemId: string, newStatus: Status) => {
@@ -196,6 +214,7 @@ export default function KanbanBoard({
           action={selectedAction}
           onClose={() => setSelectedAction(null)}
           userEmail={userEmail}
+          onUpdateAction={handleActionUpdate}
         />
       )}
     </>
