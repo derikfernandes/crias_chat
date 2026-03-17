@@ -216,17 +216,30 @@ export default function GerenciamentoList({
   meetings: MeetingWithItems[];
 }) {
   const [filterAssunto, setFilterAssunto] = useState("");
+  const [filterTema, setFilterTema] = useState("");
   const [selectedAssuntos, setSelectedAssuntos] = useState<string[]>([]);
+  const [selectedTemas, setSelectedTemas] = useState<string[]>([]);
   const [filterDataDe, setFilterDataDe] = useState("");
   const [filterDataAte, setFilterDataAte] = useState("");
   const [optionsOpen, setOptionsOpen] = useState(false);
+  const [temaOptionsOpen, setTemaOptionsOpen] = useState(false);
   const optionsRef = useRef<HTMLDivElement>(null);
+  const temaOptionsRef = useRef<HTMLDivElement>(null);
 
   const assuntosUnicos = useMemo(() => {
     const set = new Set<string>();
     meetings.forEach((m) => {
       const a = (m.assunto ?? "").trim();
       if (a) set.add(a);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [meetings]);
+
+  const temasUnicos = useMemo(() => {
+    const set = new Set<string>();
+    meetings.forEach((m) => {
+      const t = (m.tema ?? "").trim();
+      if (t) set.add(t);
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
   }, [meetings]);
@@ -245,13 +258,41 @@ export default function GerenciamentoList({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [optionsOpen]);
 
+  useEffect(() => {
+    if (!temaOptionsOpen) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (
+        temaOptionsRef.current &&
+        !temaOptionsRef.current.contains(e.target as Node)
+      ) {
+        setTemaOptionsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [temaOptionsOpen]);
+
   const filtered = useMemo(() => {
     let list = meetings;
 
-    const q = filterAssunto.trim().toLowerCase();
-    if (q) {
+    const qAssunto = filterAssunto.trim().toLowerCase();
+    if (qAssunto) {
       list = list.filter((m) =>
-        (m.assunto ?? "").toLowerCase().includes(q)
+        (m.assunto ?? "").toLowerCase().includes(qAssunto)
+      );
+    }
+
+    const qTema = filterTema.trim().toLowerCase();
+    if (qTema) {
+      list = list.filter((m) =>
+        (m.tema ?? "").toLowerCase().includes(qTema)
+      );
+    }
+
+    if (selectedTemas.length > 0) {
+      const selectedLower = selectedTemas.map((s) => s.toLowerCase());
+      list = list.filter((m) =>
+        selectedLower.includes((m.tema ?? "").trim().toLowerCase())
       );
     }
 
@@ -284,7 +325,7 @@ export default function GerenciamentoList({
     }
 
     return list;
-  }, [meetings, filterAssunto, filterDataDe, filterDataAte]);
+  }, [meetings, filterAssunto, filterTema, selectedTemas, filterDataDe, filterDataAte]);
 
   const totalItens = filtered.reduce((acc, m) => acc + m.items.length, 0);
   const totalAcoes = filtered.reduce(
@@ -435,6 +476,161 @@ export default function GerenciamentoList({
               </button>
             )}
           </div>
+        )}
+      </div>
+
+      <div style={styles.filterBox} ref={temaOptionsRef}>
+        <label htmlFor="filter-tema" style={styles.filterLabel}>
+          Filtrar por tema
+        </label>
+        <div style={styles.filterRow}>
+          <input
+            id="filter-tema"
+            type="text"
+            value={filterTema}
+            onChange={(e) => setFilterTema(e.target.value)}
+            placeholder="Digite parte do tema ou abra as opções..."
+            style={styles.filterInput}
+            onFocus={() => setTemaOptionsOpen(true)}
+          />
+          {filterTema && (
+            <button
+              type="button"
+              onClick={() => setFilterTema("")}
+              style={styles.filterClearBtn}
+              title="Limpar filtro de tema"
+              aria-label="Limpar filtro de tema"
+            >
+              ×
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setTemaOptionsOpen((o) => !o)}
+            style={{
+              ...styles.filterArrowBtn,
+              transform: temaOptionsOpen ? "rotate(180deg)" : "rotate(0deg)",
+            }}
+            title={temaOptionsOpen ? "Fechar opções" : "Ver opções de tema"}
+            aria-expanded={temaOptionsOpen}
+            aria-haspopup="listbox"
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
+        </div>
+        {temaOptionsOpen && temasUnicos.length > 0 && (
+          <div
+            style={styles.optionsDropdown}
+            role="listbox"
+            aria-label="Temas disponíveis"
+          >
+            {temasUnicos
+              .filter((t) =>
+                filterTema.trim()
+                  ? t.toLowerCase().includes(filterTema.trim().toLowerCase())
+                  : true
+              )
+              .map((tema, i, arr) => (
+                <div
+                  key={tema}
+                  role="option"
+                  tabIndex={0}
+                  style={{
+                    ...styles.optionItem,
+                    ...(selectedTemas.includes(tema)
+                      ? styles.optionItemSelected
+                      : {}),
+                    ...(i === arr.length - 1 ? styles.optionItemLast : {}),
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background =
+                      "rgba(78, 205, 196, 0.15)";
+                    e.currentTarget.style.color = "#4ecdc4";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = selectedTemas.includes(tema)
+                      ? "rgba(78, 205, 196, 0.22)"
+                      : "";
+                    e.currentTarget.style.color = selectedTemas.includes(tema)
+                      ? "#4ecdc4"
+                      : "#ddd";
+                  }}
+                  onClick={() => {
+                    setSelectedTemas((prev) =>
+                      prev.includes(tema)
+                        ? prev.filter((s) => s !== tema)
+                        : [...prev, tema]
+                    );
+                  }}
+                >
+                  {tema}
+                </div>
+              ))}
+            {temasUnicos.filter((t) =>
+              filterTema.trim()
+                ? t.toLowerCase().includes(filterTema.trim().toLowerCase())
+                : true
+            ).length === 0 && (
+              <div
+                style={{
+                  padding: "0.75rem 0.85rem",
+                  color: "#888",
+                  fontSize: "0.9rem",
+                }}
+              >
+                Nenhum tema cadastrado.
+              </div>
+            )}
+          </div>
+        )}
+        {filterTema.trim() && (
+          <p style={styles.filterHint}>
+            Mostrando {filtered.length}{" "}
+            {filtered.length === 1 ? "ata" : "atas"} que contêm &quot;
+            {filterTema.trim()}&quot; no tema.
+          </p>
+        )}
+        {selectedTemas.length > 0 && (
+          <div style={styles.selectedAssuntosRow}>
+            {selectedTemas.map((tema) => (
+              <button
+                key={tema}
+                type="button"
+                onClick={() =>
+                  setSelectedTemas((prev) => prev.filter((s) => s !== tema))
+                }
+                style={styles.selectedAssuntoChip}
+              >
+                <span>{tema}</span>
+                <span aria-hidden="true">×</span>
+              </button>
+            ))}
+            {selectedTemas.length > 1 && (
+              <button
+                type="button"
+                onClick={() => setSelectedTemas([])}
+                style={styles.selectedAssuntoClearAll}
+              >
+                Limpar temas
+              </button>
+            )}
+          </div>
+        )}
+        {temasUnicos.length > 0 && (
+          <p style={styles.filterHint}>
+            Temas cadastrados: {temasUnicos.join(", ")}
+          </p>
         )}
       </div>
 

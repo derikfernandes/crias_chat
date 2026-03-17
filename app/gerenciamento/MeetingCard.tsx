@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import type { Meeting, MeetingItem } from "@/lib/firestore-types";
 
@@ -258,6 +258,17 @@ const styles: Record<string, React.CSSProperties> = {
     background: "#4ecdc4",
     color: "#1a1a2e",
   },
+  itemDeleteBtn: {
+    padding: "0.25rem 0.45rem",
+    borderRadius: "6px",
+    border: "1px solid rgba(255,255,255,0.25)",
+    background: "rgba(255,255,255,0.04)",
+    color: "#ff6b6b",
+    fontSize: "0.75rem",
+    fontWeight: 600,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  },
   status: {
     fontSize: "0.85rem",
     marginTop: "0.5rem",
@@ -305,6 +316,7 @@ export default function MeetingCard({
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [assunto, setAssunto] = useState(meeting.assunto ?? "");
+  const [tema, setTema] = useState(meeting.tema ?? "");
   const [textoCompleto, setTextoCompleto] = useState(
     meeting.textoCompleto ?? ""
   );
@@ -343,6 +355,28 @@ export default function MeetingCard({
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(
     null
   );
+  const temaDropdownRef = useRef<HTMLDivElement | null>(null);
+  const [temaOptionsOpen, setTemaOptionsOpen] = useState(false);
+
+  const allTemas = useMemo(() => {
+    // Usa os temas presentes no próprio meeting como base (fallback simples).
+    // Se você quiser passar uma lista global de temas depois, é só trocar aqui.
+    return (meeting.tema ? [meeting.tema] : []).filter((t) => t.trim().length > 0);
+  }, [meeting.tema]);
+
+  useEffect(() => {
+    if (!temaOptionsOpen) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (
+        temaDropdownRef.current &&
+        !temaDropdownRef.current.contains(e.target as Node)
+      ) {
+        setTemaOptionsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [temaOptionsOpen]);
 
   // Sincroniza a lista de itens quando a reunião for atualizada (ex.: após "Extrair itens com IA" + router.refresh)
   useEffect(() => {
@@ -410,6 +444,17 @@ export default function MeetingCard({
       const next = [...prev];
       next[index] = { ...next[index], content };
       return next;
+    });
+  }
+
+  function removeItemAtIndex(index: number) {
+    setItems((prev) => {
+      const remaining = prev.filter((_, i) => i !== index);
+      // Reorganiza a ordem de forma sequencial após remoção
+      return remaining.map((item, idx) => ({
+        ...item,
+        order: idx,
+      }));
     });
   }
 
@@ -488,10 +533,12 @@ export default function MeetingCard({
     try {
       const meetingPayload: {
         assunto?: string;
+        tema?: string;
         textoCompleto?: string;
         data?: string;
       } = {};
       if (assunto !== (meeting.assunto ?? "")) meetingPayload.assunto = assunto;
+      if (tema !== (meeting.tema ?? "")) meetingPayload.tema = tema;
       if (textoCompleto !== (meeting.textoCompleto ?? ""))
         meetingPayload.textoCompleto = textoCompleto;
       if (dateStr) {
@@ -544,7 +591,12 @@ export default function MeetingCard({
           if (statusChanged) payload.actionStatus = newStatus;
           if (dueChanged) payload.actionDueDate = newDue || null;
         }
-        if (Object.keys(payload).length === 0) continue;
+        // Sempre manda order para manter a sequência após remoções
+        payload.order = item.order;
+        if (Object.keys(payload).length === 1 && payload.order === orig?.order) {
+          // Só teria order igual ao original, então não há nada a atualizar
+          continue;
+        }
         const res = await fetch(
           `/api/meetings/${meeting.id}/items/${item.id}`,
           {
@@ -558,6 +610,29 @@ export default function MeetingCard({
           setStatus({
             ok: false,
             msg: data?.error ?? `Erro ao atualizar item ${i + 1}`,
+          });
+          setSaving(false);
+          return;
+        }
+      }
+
+      // Exclui do Firestore os itens que existiam antes e não estão mais na lista
+      const remainingIds = new Set(items.map((it) => it.id).filter((id): id is string => !!id));
+      for (let i = 0; i < originalItems.length; i++) {
+        const orig = originalItems[i];
+        if (!orig.id) continue;
+        if (remainingIds.has(orig.id)) continue;
+        const res = await fetch(
+          `/api/meetings/${meeting.id}/items/${orig.id}`,
+          {
+            method: "DELETE",
+          }
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setStatus({
+            ok: false,
+            msg: data?.error ?? `Erro ao excluir item ${i + 1}`,
           });
           setSaving(false);
           return;
@@ -578,17 +653,121 @@ export default function MeetingCard({
   return (
     <article style={styles.card}>
       <div style={styles.cardHeader}>
-        {editing ? (
-          <input
-            type="text"
-            value={assunto}
-            onChange={(e) => setAssunto(e.target.value)}
-            placeholder="Assunto"
-            style={{ ...styles.input, flex: 1, margin: 0 }}
-          />
-        ) : (
-          <h2 style={styles.cardTitle}>{meeting.assunto}</h2>
-        )}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {editing ? (
+            <>
+              <input
+                type="text"
+                value={assunto}
+                onChange={(e) => setAssunto(e.target.value)}
+                placeholder="Assunto"
+                style={{ ...styles.input, flex: 1, margin: 0, marginBottom: "0.4rem" }}
+              />
+              <div
+                ref={temaDropdownRef}
+                style={{ position: "relative" }}
+              >
+                <input
+                  type="text"
+                  value={tema}
+                  onChange={(e) => {
+                    setTema(e.target.value);
+                    setTemaOptionsOpen(true);
+                  }}
+                  placeholder="Tema (opcional, para agrupar reuniões relacionadas)"
+                  style={{ ...styles.input, flex: 1, margin: 0 }}
+                  onFocus={() => setTemaOptionsOpen(true)}
+                />
+                <button
+                  type="button"
+                  onClick={() => setTemaOptionsOpen((o) => !o)}
+                  style={{
+                    position: "absolute",
+                    top: "50%",
+                    right: "0.5rem",
+                    transform: "translateY(-50%)",
+                    background: "none",
+                    border: "none",
+                    padding: 0,
+                    cursor: "pointer",
+                    color: "#4ecdc4",
+                  }}
+                  aria-label="Ver temas existentes"
+                >
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </button>
+                {temaOptionsOpen && allTemas.length > 0 && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "100%",
+                      left: 0,
+                      right: 0,
+                      marginTop: "0.25rem",
+                      maxHeight: "200px",
+                      overflowY: "auto",
+                      borderRadius: "8px",
+                      border: "1px solid rgba(255,255,255,0.2)",
+                      background: "rgba(26,26,46,0.98)",
+                      boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+                      zIndex: 30,
+                    }}
+                  >
+                    {allTemas
+                      .filter((t) =>
+                        tema.trim()
+                          ? t.toLowerCase().includes(tema.trim().toLowerCase())
+                          : true
+                      )
+                      .map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => {
+                            setTema(t);
+                            setTemaOptionsOpen(false);
+                          }}
+                          style={{
+                            display: "block",
+                            width: "100%",
+                            textAlign: "left",
+                            padding: "0.45rem 0.75rem",
+                            border: "none",
+                            background: "transparent",
+                            color: "#ddd",
+                            fontSize: "0.9rem",
+                            cursor: "pointer",
+                          }}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <h2 style={styles.cardTitle}>{meeting.assunto}</h2>
+              {meeting.tema && (
+                <p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem", color: "#4ecdc4" }}>
+                  Tema: {meeting.tema}
+                </p>
+              )}
+            </>
+          )}
+        </div>
         <div style={styles.dateContainer}>
           {editing ? (
             <>
@@ -675,16 +854,25 @@ export default function MeetingCard({
                       onChange={(e) => updateItemContent(idx, e.target.value)}
                       style={styles.input}
                     />
-                    <button
-                      type="button"
-                      onClick={() => toggleItemType(idx)}
-                      style={{
-                        ...styles.itemActionTag,
-                        ...(isAction ? styles.itemActionTagActive : {}),
-                      }}
-                    >
-                      {isAction ? "Ação" : "Transformar em ação"}
-                    </button>
+                    <div style={{ display: "flex", gap: "0.35rem" }}>
+                      <button
+                        type="button"
+                        onClick={() => toggleItemType(idx)}
+                        style={{
+                          ...styles.itemActionTag,
+                          ...(isAction ? styles.itemActionTagActive : {}),
+                        }}
+                      >
+                        {isAction ? "Ação" : "Transformar em ação"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeItemAtIndex(idx)}
+                        style={styles.itemDeleteBtn}
+                      >
+                        Excluir
+                      </button>
+                    </div>
                   </div>
                   {isAction && (
                     <div style={styles.itemEditActionMeta}>

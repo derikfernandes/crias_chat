@@ -86,6 +86,7 @@ export async function createMeeting(data: MeetingCreate): Promise<string> {
   }
   const payload = {
     assunto: data.assunto,
+    ...(data.tema != null && data.tema !== "" && { tema: data.tema }),
     data: toFirestoreDate(data.data),
     ...(data.textoCompleto != null && data.textoCompleto !== "" && { textoCompleto: data.textoCompleto }),
     userEmail,
@@ -205,10 +206,11 @@ export async function listMeetingsNearDate(
 /** Atualiza uma reunião existente (assunto, data e/ou textoCompleto). */
 export async function updateMeeting(
   id: string,
-  data: Partial<Pick<Meeting, "assunto" | "data" | "textoCompleto">>
+  data: Partial<Pick<Meeting, "assunto" | "tema" | "data" | "textoCompleto">>
 ): Promise<void> {
   const payload: Record<string, unknown> = { updatedAt: serverTimestamp() };
   if (data.assunto !== undefined) payload.assunto = data.assunto;
+   if (data.tema !== undefined) payload.tema = data.tema;
   if (data.data !== undefined) payload.data = data.data instanceof Date ? data.data : toFirestoreDate(data.data);
   if (data.textoCompleto !== undefined) payload.textoCompleto = data.textoCompleto;
   await updateDoc(meetingRef(id), payload);

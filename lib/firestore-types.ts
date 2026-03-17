@@ -42,6 +42,8 @@ export interface Meeting {
   id?: string;
   /** Assunto/categoria da reunião (ex: "Sprint Planning", "1:1") */
   assunto: string;
+  /** Tema opcional para agrupar reuniões relacionadas (ex: "Onboarding Cliente X") */
+  tema?: string;
   /** Data (e opcionalmente hora) da reunião */
   data: Timestamp | Date | string;
   /** Texto completo da reunião (conteúdo bruto/compilado da conversa) */

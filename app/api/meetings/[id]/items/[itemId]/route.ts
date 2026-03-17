@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { updateMeetingItem } from "@/lib/meetings";
+import { updateMeetingItem, deleteMeetingItem } from "@/lib/meetings";
 
 export async function PATCH(
   _request: NextRequest,
@@ -80,6 +80,26 @@ export async function PATCH(
     return NextResponse.json({ ok: true });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Erro ao atualizar item";
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  }
+}
+
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string; itemId: string }> }
+) {
+  try {
+    const { id: meetingId, itemId } = await params;
+    if (!meetingId || !itemId) {
+      return NextResponse.json(
+        { ok: false, error: "id da reunião e itemId são obrigatórios" },
+        { status: 400 }
+      );
+    }
+    await deleteMeetingItem(meetingId, itemId);
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Erro ao excluir item";
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }
