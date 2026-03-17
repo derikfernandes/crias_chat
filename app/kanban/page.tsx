@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import type { MeetingItem } from "@/lib/firestore-types";
 import KanbanBoard from "./KanbanBoard";
@@ -9,10 +9,11 @@ import KanbanBoard from "./KanbanBoard";
 type ActionWithMeeting = MeetingItem & {
   meetingId: string;
   meetingAssunto: string;
+  meetingTema?: string;
 };
 
 function extractActionsFromMeetings(
-  meetings: Array<{ id?: string; assunto?: string; items: MeetingItem[] }>
+  meetings: Array<{ id?: string; assunto?: string; tema?: string; items: MeetingItem[] }>
 ): ActionWithMeeting[] {
   const actions: ActionWithMeeting[] = [];
   for (const m of meetings) {
@@ -23,6 +24,7 @@ function extractActionsFromMeetings(
           ...item,
           meetingId: m.id,
           meetingAssunto: m.assunto ?? "Reunião",
+          meetingTema: m.tema,
         });
       }
     }
@@ -37,6 +39,10 @@ export default function KanbanPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
   const [selectedOwners, setSelectedOwners] = useState<string[]>([]);
+  const [selectedThemes, setSelectedThemes] = useState<string[]>([]);
+  const [themeFilter, setThemeFilter] = useState("");
+  const [themeOptionsOpen, setThemeOptionsOpen] = useState(false);
+  const themeOptionsRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (authLoading) return;
@@ -70,20 +76,54 @@ export default function KanbanPage() {
       .finally(() => setLoading(false));
   }, [user?.email, authLoading]);
 
-  const subjects = Array.from(
-    new Set(actions.map((a) => a.meetingAssunto))
-  ).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const subjects = useMemo(
+    () =>
+      Array.from(new Set(actions.map((a) => a.meetingAssunto))).sort((a, b) =>
+        a.localeCompare(b, "pt-BR")
+      ),
+    [actions]
+  );
 
-  const owners = Array.from(
-    new Set(
-      actions
-        .flatMap((a) =>
-          Array.isArray(a.actionOwners) ? a.actionOwners : []
+  const themes = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          actions
+            .map((a) => (a.meetingTema ?? "").trim())
+            .filter((t) => t.length > 0)
         )
-        .map((o) => o.trim())
-        .filter((o) => o.length > 0)
-    )
-  ).sort((a, b) => a.localeCompare(b, "pt-BR"));
+      ).sort((a, b) => a.localeCompare(b, "pt-BR")),
+    [actions]
+  );
+
+  const owners = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          actions
+            .flatMap((a) =>
+              Array.isArray(a.actionOwners) ? a.actionOwners : []
+            )
+            .map((o) => o.trim())
+            .filter((o) => o.length > 0)
+        )
+      ).sort((a, b) => a.localeCompare(b, "pt-BR")),
+    [actions]
+  );
+
+  useEffect(() => {
+    if (!themeOptionsOpen) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (
+        themeOptionsRef.current &&
+        !themeOptionsRef.current.contains(e.target as Node)
+      ) {
+        setThemeOptionsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [themeOptionsOpen]);
 
   const toggleSubject = (assunto: string) => {
     setSelectedSubjects((prev) =>
@@ -101,6 +141,12 @@ export default function KanbanPage() {
     );
   };
 
+  const toggleTheme = (tema: string) => {
+    setSelectedThemes((prev) =>
+      prev.includes(tema) ? prev.filter((s) => s !== tema) : [...prev, tema]
+    );
+  };
+
   let filteredActions = actions;
   if (selectedSubjects.length > 0) {
     filteredActions = filteredActions.filter((a) =>
@@ -111,6 +157,12 @@ export default function KanbanPage() {
     filteredActions = filteredActions.filter((a) =>
       (a.actionOwners ?? []).some((o) => selectedOwners.includes(o))
     );
+  }
+  if (selectedThemes.length > 0) {
+    filteredActions = filteredActions.filter((a) => {
+      const tema = (a.meetingTema ?? "").trim();
+      return tema && selectedThemes.includes(tema);
+    });
   }
 
   return (
@@ -156,6 +208,251 @@ export default function KanbanPage() {
                 </button>
               )}
             </div>
+
+            {themes.length > 0 && (
+              <div
+                style={{
+                  marginTop: "0.25rem",
+                  position: "relative",
+                }}
+                ref={themeOptionsRef}
+              >
+                <span style={styles.filtersLabel}>Filtrar por tema:</span>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "stretch",
+                    gap: 0,
+                    borderRadius: "999px",
+                    border: "1px solid rgba(255,255,255,0.2)",
+                    background: "rgba(0,0,0,0.25)",
+                    overflow: "hidden",
+                    marginTop: "0.25rem",
+                  }}
+                >
+                  <input
+                    type="text"
+                    value={themeFilter}
+                    onChange={(e) => setThemeFilter(e.target.value)}
+                    placeholder="Digite ou selecione um tema..."
+                    style={{
+                      flex: 1,
+                      padding: "0.4rem 0.7rem",
+                      border: "none",
+                      background: "transparent",
+                      color: "#eee",
+                      fontSize: "0.85rem",
+                      fontFamily: "inherit",
+                      outline: "none",
+                    }}
+                    onFocus={() => setThemeOptionsOpen(true)}
+                  />
+                  {themeFilter && (
+                    <button
+                      type="button"
+                      onClick={() => setThemeFilter("")}
+                      style={{
+                        padding: "0.35rem 0.55rem",
+                        border: "none",
+                        borderLeft: "1px solid rgba(255,255,255,0.15)",
+                        background: "transparent",
+                        color: "#888",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "0.85rem",
+                      }}
+                      title="Limpar campo de tema"
+                      aria-label="Limpar campo de tema"
+                    >
+                      ×
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setThemeOptionsOpen((o) => !o)}
+                    style={{
+                      padding: "0.35rem 0.6rem",
+                      border: "none",
+                      borderLeft: "1px solid rgba(255,255,255,0.2)",
+                      background: "rgba(255,255,255,0.06)",
+                      color: "#4ecdc4",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      transition: "transform 0.2s ease",
+                      transform: themeOptionsOpen
+                        ? "rotate(180deg)"
+                        : "rotate(0deg)",
+                    }}
+                    title={
+                      themeOptionsOpen
+                        ? "Fechar opções de tema"
+                        : "Ver opções de tema"
+                    }
+                    aria-expanded={themeOptionsOpen}
+                    aria-haspopup="listbox"
+                  >
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  </button>
+                </div>
+                {themeOptionsOpen && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "100%",
+                      left: 0,
+                      right: 0,
+                      marginTop: "0.25rem",
+                      maxHeight: "220px",
+                      overflowY: "auto",
+                      borderRadius: "10px",
+                      border: "1px solid rgba(255,255,255,0.2)",
+                      background: "rgba(26,26,46,0.98)",
+                      boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+                      zIndex: 40,
+                    }}
+                    role="listbox"
+                    aria-label="Temas disponíveis"
+                  >
+                    {themes
+                      .filter((t) =>
+                        themeFilter.trim()
+                          ? t
+                              .toLowerCase()
+                              .includes(themeFilter.trim().toLowerCase())
+                          : true
+                      )
+                      .map((tema, i, arr) => {
+                        const active = selectedThemes.includes(tema);
+                        return (
+                          <div
+                            key={tema}
+                            role="option"
+                            tabIndex={0}
+                            style={{
+                              padding: "0.5rem 0.85rem",
+                              fontSize: "0.9rem",
+                              color: active ? "#4ecdc4" : "#ddd",
+                              cursor: "pointer",
+                              borderBottom:
+                                i === arr.length - 1
+                                  ? "none"
+                                  : "1px solid rgba(255,255,255,0.06)",
+                              background: active
+                                ? "rgba(78,205,196,0.22)"
+                                : "transparent",
+                              fontWeight: active ? 600 : 400,
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!active) {
+                                e.currentTarget.style.background =
+                                  "rgba(78,205,196,0.15)";
+                                e.currentTarget.style.color = "#4ecdc4";
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = active
+                                ? "rgba(78,205,196,0.22)"
+                                : "transparent";
+                              e.currentTarget.style.color = active
+                                ? "#4ecdc4"
+                                : "#ddd";
+                            }}
+                            onClick={() => {
+                              toggleTheme(tema);
+                            }}
+                          >
+                            {tema}
+                          </div>
+                        );
+                      })}
+                    {themes.filter((t) =>
+                      themeFilter.trim()
+                        ? t
+                            .toLowerCase()
+                            .includes(themeFilter.trim().toLowerCase())
+                        : true
+                    ).length === 0 && (
+                      <div
+                        style={{
+                          padding: "0.5rem 0.85rem",
+                          fontSize: "0.85rem",
+                          color: "#888",
+                        }}
+                      >
+                        Nenhum tema encontrado.
+                      </div>
+                    )}
+                  </div>
+                )}
+                {selectedThemes.length > 0 && (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: "0.4rem",
+                      marginTop: "0.4rem",
+                    }}
+                  >
+                    {selectedThemes.map((tema) => (
+                      <button
+                        key={tema}
+                        type="button"
+                        onClick={() => toggleTheme(tema)}
+                        style={{
+                          padding: "0.2rem 0.55rem",
+                          borderRadius: "999px",
+                          border:
+                            "1px solid rgba(78,205,196,0.6)",
+                          background: "rgba(78,205,196,0.12)",
+                          color: "#4ecdc4",
+                          fontSize: "0.8rem",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "0.25rem",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <span>{tema}</span>
+                        <span aria-hidden="true">×</span>
+                      </button>
+                    ))}
+                    {selectedThemes.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedThemes([])}
+                        style={{
+                          padding: "0.2rem 0.55rem",
+                          borderRadius: "999px",
+                          border:
+                            "1px solid rgba(255,255,255,0.2)",
+                          background: "transparent",
+                          color: "#999",
+                          fontSize: "0.8rem",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Limpar temas
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {owners.length > 0 && (
               <>
